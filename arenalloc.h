@@ -26,8 +26,16 @@ SOFTWARE.
 #define ARENALLOC_H
 
 #include <stddef.h>
-//#include "tinycthread/source/tinycthread.h"
 
+#if defined(ARENA_NAMESPACE)
+    #undef ARENA_NAMESPACE
+#endif
+#if defined(ARENA_CAT)
+    #undef ARENA_CAT
+#endif
+#if defined(ARENA_CAT_REDIRECT)
+    #undef ARENA_CAT_REDIRECT
+#endif
 #if defined(ARENA_C)
     #undef ARENA_C
 #endif
@@ -76,9 +84,52 @@ SOFTWARE.
 #if defined(ARENA_ATOMIC_QUALIFIED_TYPE)
     #undef ARENA_ATOMIC_QUALIFIED_TYPE
 #endif
+#if defined(ARENA_LOCK_TYPE)
+    #undef ARENA_LOCK_TYPE
+#endif
+#if defined(ARENA_LOCK_INIT)
+    #undef ARENA_LOCK_INIT
+#endif
+#if defined(ARENA_LOCK_DESTROY)
+    #undef ARENA_LOCK_DESTROY
+#endif
+#if defined(ARENA_LOCK)
+    #undef ARENA_LOCK
+#endif
+#if defined(ARENA_UNLOCK)
+    #undef ARENA_UNLOCK
+#endif
 #if defined(ARENA_THREAD_SAFE)
     #undef ARENA_THREAD_SAFE
 #endif
+#if defined(ARENA_LOCK_INT_TYPE)
+    #undef ARENA_LOCK_INT_TYPE
+#endif
+#if defined(ARENA_MK_LOCK_INT_TYPE)
+    #undef ARENA_MK_LOCK_INT_TYPE
+#endif
+#if defined(ARENA_MORECORE)
+    #undef ARENA_MORECORE
+#endif
+#if defined(ARENA_BEGIN_DECLS)
+    #undef ARENA_BEGIN_DECLS
+#endif
+#if defined(ARENA_END_DECLS)
+    #undef ARENA_END_DECLS
+#endif
+#if defined(ARENA_DEFAULT_ALIGN)
+    #undef ARENA_DEFAULT_ALIGN
+#endif
+#if defined(ARENA_ALIGNAS)
+    #undef ARENA_ALIGNAS
+#endif
+#if defined(ARENA_ALIGNOF)
+    #undef ARENA_ALIGNOF
+#endif
+
+#define ARENA_CAT_REDIRECT(x, y) x##y
+#define ARENA_CAT(x, y) ARENA_CAT_REDIRECT(x, y)
+#define ARENA_NAMESPACE(ident) ARENA_CAT(arena_, ident)
 
 #if defined(__has_feature)
     #define ARENA_HAS_FEATURE(x) __has_feature(x)
@@ -161,9 +212,31 @@ SOFTWARE.
     #error "Unsupported language"
 #endif
 
+#if defined(ARENA_C)
+    #define ARENA_BEGIN_DECLS
+    #define ARENA_END_DECLS
+#elif defined(ARENA_CXX)
+    #define ARENA_BEGIN_DECLS extern "C" {
+    #define ARENA_END_DECLS }
+#else
+    #error "Unsupported language"
+#endif
+
+ARENA_BEGIN_DECLS
+
+#define _GNU_SOURCE 1
+#define _LARGEFILE_SOURCE 1
+#define _LARGEFILE64_SOURCE 1
+#define _FILE_OFFSET_BITS 64
+#define _TIME_BITS 64
+#if !defined(_FORTIFY_SOURCE)
+    #define _FORTIFY_SOURCE 3
+#endif
+
 #if defined(_WIN32) || defined(_WIN64)
     #define ARENA_ON_WINDOWS 1
 #elif (defined(__linux__) || defined(__unix__)) && !(defined(__APPLE__) || defined(__ANDROID__))
+    // Unix but not Apple or Android (i.e. Linux, BSD, Solaris, etc.)
     #define ARENA_ON_UNIX 1
 #elif defined(__APPLE__)
     #define ARENA_ON_MACOS 1
@@ -184,7 +257,7 @@ SOFTWARE.
  * 
 */
 
-#if ARENA_C >= 2011 || ARENA_CXX >= 2011
+#if (defined(ARENA_C) && ARENA_C >= 2011) || (defined(ARENA_CXX) && ARENA_CXX >= 2011)
     #if defined(__STDC_NO_ATOMICS__)
         #define ARENA_HAS_ATOMIC 0
         #define ARENA_ATOMIC_SPECIFIED_TYPE(type) type
@@ -202,6 +275,9 @@ SOFTWARE.
         #define ARENA_HAS_THREADS 1
         #include <threads.h>
     #endif
+    #include <stdalign.h>
+    #define ARENA_ALIGNAS(x) alignas(x)
+    #define ARENA_ALIGNOF(x) alignof(x)
 #endif
 
 #if defined(ARENA_ON_WINDOWS)
@@ -242,6 +318,13 @@ SOFTWARE.
             #include <pthread.h>
         #endif
     #endif
+    #if !defined(ARENA_ALIGNAS)
+        #define ARENA_ALIGNAS(x) __attribute__((__aligned__(x)))
+    #endif
+    #if !defined(ARENA_ALIGNOF)
+        // Pray for it to be defined
+        #define ARENA_ALIGNOF(x) _Alignof(x)
+    #endif
 #endif
 
 #if defined(ARENA_WITH_GCC) && ((defined(ARENA_C) && ARENA_C >= 2011) || (defined(ARENA_CXX) && ARENA_CXX >= 2011))
@@ -261,6 +344,38 @@ SOFTWARE.
             #define ARENA_HAS_THREADS 3
             #include <pthread.h>
         #endif
+    #endif
+    #if !defined(ARENA_ALIGNAS)
+        #if ARENA_HAS_FEATURE(c_alignas) || ARENA_HAS_EXTENSION(c_alignas) || ARENA_HAS_INCLUDE(<stdalign.h>)
+            #define ARENA_ALIGNAS(x) _Alignas(x)
+        #else
+            #define ARENA_ALIGNAS(x) __attribute__((__aligned__(x)))
+        #endif
+    #endif
+    #if !defined(ARENA_ALIGNOF)
+        #if ARENA_HAS_FEATURE(c_alignof) || ARENA_HAS_EXTENSION(c_alignof) || ARENA_HAS_INCLUDE(<stdalign.h>)
+            #define ARENA_ALIGNOF(x) _Alignof(x)
+        #else
+            // Pray for it to work
+            #define ARENA_ALIGNOF(x) __alignof__(x)
+        #endif
+    #endif
+#endif
+
+#if !defined(ARENA_ALIGNAS)
+    #if defined(ARENA_WITH_MSVC)
+        #define ARENA_ALIGNAS(x) __declspec(align(x))
+    #else
+        // Pray for it to be defined
+        #define ARENA_ALIGNAS(x) _Alignas(x)
+    #endif
+#endif
+#if !defined(ARENA_ALIGNOF)
+    #if defined(ARENA_WITH_MSVC)
+        #define ARENA_ALIGNOF(x) __alignof(x)
+    #else
+        // Pray for it to be defined
+        #define ARENA_ALIGNOF(x) _Alignof(x)
     #endif
 #endif
 
@@ -292,84 +407,197 @@ SOFTWARE.
 
 #include <stdint.h>
 
+#define ARENA_LOCK_INT_TYPE int16_t
+#define ARENA_MK_LOCK_INT_TYPE(value) INT16_C(value)
+
 #if ARENA_THREAD_SAFE == 1
     #if ARENA_HAS_ATOMIC != 0
         #if ARENA_HAS_ATOMIC == 1
         // Use C(++)11 atomics
-            #define ARENA_LOCK_TYPE volatile ARENA_ATOMIC_QUALIFIED_TYPE(int16_t)
-            #define ARENA_LOCK_INIT 0
-            #define ARENA_LOCK_DESTROY(lock)
-            #define ARENA_LOCK(lock)                                                    \
-                {                                                                       \
-                    ARENA_LOCK_TYPE expected = 0;                                       \
-                    ARENA_LOCK_TYPE desired = 1;                                        \
-                    while(!atomic_compare_exchange_weak_explicit(                       \
-                            &(lock),                                                    \
-                            &expected,                                                  \
-                            desired,                                                    \
-                            memory_order_acquire,                                       \
-                            memory_order_relaxed))                                      \
-                    {                                                                   \
-                        expected = 0;                                                   \
-                        desired = 1;                                                    \
-                    }                                                                   \
+            #define ARENA_LOCK_TYPE volatile ARENA_ATOMIC_QUALIFIED_TYPE(ARENA_LOCK_INT_TYPE)
+            #define ARENA_LOCK_INIT(lock) atomic_init(&(lock), ARENA_MK_LOCK_INT_TYPE(0))
+            #define ARENA_LOCK_DESTROY(lock) atomic_store_explicit(&(lock), ARENA_MK_LOCK_INT_TYPE(0), memory_order_relaxed)
+            #define ARENA_LOCK(lock)                                        \
+                {                                                           \
+                    ARENA_LOCK_TYPE expected = ARENA_MK_LOCK_INT_TYPE(0);   \
+                    ARENA_LOCK_TYPE desired = ARENA_MK_LOCK_INT_TYPE(1);    \
+                    while(!atomic_compare_exchange_weak_explicit(           \
+                          &(lock),                                          \
+                          &expected,                                        \
+                          desired,                                          \
+                          memory_order_acquire,                             \
+                          memory_order_relaxed))                            \
+                    {                                                       \
+                        expected = ARENA_MK_LOCK_INT_TYPE(0);               \
+                        desired = ARENA_MK_LOCK_INT_TYPE(1);                \
+                    }                                                       \
                 }
-            #define ARENA_UNLOCK(lock) atomic_store_explicit(&(lock), 0, memory_order_release)
+            #define ARENA_UNLOCK(lock)          \
+                atomic_store_explicit(          \
+                    &(lock),                    \
+                    ARENA_MK_LOCK_INT_TYPE(0),  \
+                    memory_order_release        \
+                )
         #elif ARENA_HAS_ATOMIC == 2
         // Use Windows Interlocked* functions
-            #define ARENA_LOCK_TYPE volatile ARENA_ATOMIC_QUALIFIED_TYPE(int16_t)
-            #define ARENA_LOCK_INIT 0
-            #define ARENA_LOCK_DESTROY(lock)
-            #define ARENA_LOCK(lock) while(InterlockedCompareExchange16(&(lock), 1, 0))
-            #define ARENA_UNLOCK(lock) InterlockedExchange16(&(lock), 0)
+            #define ARENA_LOCK_TYPE volatile ARENA_ATOMIC_QUALIFIED_TYPE(ARENA_LOCK_INT_TYPE)
+            #define ARENA_LOCK_INIT(lock) InterlockedExchange16(&(lock), ARENA_MK_LOCK_INT_TYPE(0))
+            #define ARENA_LOCK_DESTROY(lock) InterlockedExchange16(&(lock), ARENA_MK_LOCK_INT_TYPE(0))
+            #define ARENA_LOCK(lock)                                        \
+                {                                                           \
+                    ARENA_LOCK_TYPE expected = ARENA_MK_LOCK_INT_TYPE(0);   \
+                    ARENA_LOCK_TYPE desired = ARENA_MK_LOCK_INT_TYPE(1);    \
+                    while(!InterlockedCompareExchange16(                    \
+                            &(lock),                                        \
+                            desired,                                        \
+                            expected))                                      \
+                    {                                                       \
+                        expected = ARENA_MK_LOCK_INT_TYPE(0);               \
+                        desired = ARENA_MK_LOCK_INT_TYPE(1);                \
+                    }                                                       \
+                }
+            #define ARENA_UNLOCK(lock) InterlockedExchange16(&(lock), ARENA_MK_LOCK_INT_TYPE(0))
         #elif ARENA_HAS_ATOMIC == 3
         // Use clang builtins
-            #define ARENA_LOCK_TYPE volatile ARENA_ATOMIC_QUALIFIED_TYPE(int16_t)
-            #define ARENA_LOCK_INIT 0
-            #define ARENA_LOCK_DESTROY(lock)
-            #define ARENA_LOCK(lock) while(__c11_atomic_compare_exchange_weak(&(lock), 0, 1, memory_order_acquire, memory_order_relaxed))
-            #define ARENA_UNLOCK(lock) __c11_atomic_store(&(lock), 0, memory_order_release)
+            #define ARENA_LOCK_TYPE volatile ARENA_ATOMIC_QUALIFIED_TYPE(ARENA_LOCK_INT_TYPE)
+            #define ARENA_LOCK_INIT(lock) __c11_atomic_store(&(lock), ARENA_MK_LOCK_INT_TYPE(0), __ATOMIC_RELAXED)
+            #define ARENA_LOCK_DESTROY(lock) __c11_atomic_store(&(lock), ARENA_MK_LOCK_INT_TYPE(0), __ATOMIC_RELAXED)
+            #define ARENA_LOCK(lock)                                        \
+                {                                                           \
+                    ARENA_LOCK_TYPE expected = ARENA_MK_LOCK_INT_TYPE(0);   \
+                    ARENA_LOCK_TYPE desired = ARENA_MK_LOCK_INT_TYPE(1);    \
+                    while(!__c11_atomic_compare_exchange_weak(              \
+                            &(lock),                                        \
+                            &expected,                                      \
+                            desired,                                        \
+                            __ATOMIC_ACQUIRE,                               \
+                            __ATOMIC_RELAXED))                              \
+                    {                                                       \
+                        expected = ARENA_MK_LOCK_INT_TYPE(0);               \
+                        desired = ARENA_MK_LOCK_INT_TYPE(1);                \
+                    }                                                       \
+                }
+            #define ARENA_UNLOCK(lock) __c11_atomic_store(&(lock), ARENA_MK_LOCK_INT_TYPE(0), __ATOMIC_RELEASE)
         #elif ARENA_HAS_ATOMIC == 4
         // Use gcc builtins
-            /*
-             * TODO
-             */
+            #define ARENA_LOCK_TYPE volatile ARENA_ATOMIC_QUALIFIED_TYPE(ARENA_LOCK_INT_TYPE)
+            #define ARENA_LOCK_INIT __atomic_store_n(&(lock), ARENA_MK_LOCK_INT_TYPE(0), __ATOMIC_RELAXED)
+            #define ARENA_LOCK_DESTROY(lock) __atomic_store_n(&(lock), ARENA_MK_LOCK_INT_TYPE(0), __ATOMIC_RELAXED)
+            #define ARENA_LOCK(lock)                                        \
+                {                                                           \
+                    ARENA_LOCK_TYPE expected = ARENA_MK_LOCK_INT_TYPE(0);   \
+                    ARENA_LOCK_TYPE desired = ARENA_MK_LOCK_INT_TYPE(1);    \
+                    while(!__atomic_compare_exchange_n(                     \
+                            &(lock),                                        \
+                            &expected,                                      \
+                            desired,                                        \
+                            1, /* weak */                                   \
+                            __ATOMIC_ACQUIRE,                               \
+                            __ATOMIC_RELAXED))                              \
+                    {                                                       \
+                        expected = ARENA_MK_LOCK_INT_TYPE(0);               \
+                        desired = ARENA_MK_LOCK_INT_TYPE(1);                \
+                    }                                                       \
+                }
         #endif
     #elif ARENA_HAS_THREADS == 1
     // Use C11 threads
-        /*
-         * TODO
-         */
+        #define ARENA_LOCK_TYPE mtx_t
+        #define ARENA_LOCK_INIT(lock) mtx_init(&(lock), mtx_plain)
+        #define ARENA_LOCK_DESTROY(lock) mtx_destroy(&(lock))
+        #define ARENA_LOCK(lock) mtx_lock(&(lock))
+        #define ARENA_UNLOCK(lock) mtx_unlock(&(lock))
     #elif ARENA_HAS_THREADS == 2
     // Use Windows API
-        /*
-         * TODO
-         */
+        #define ARENA_LOCK_TYPE CRITICAL_SECTION
+        #define ARENA_LOCK_INIT(lock) InitializeCriticalSection(&(lock))
+        #define ARENA_LOCK_DESTROY(lock) DeleteCriticalSection(&(lock))
+        #define ARENA_LOCK(lock) EnterCriticalSection(&(lock))
+        #define ARENA_UNLOCK(lock) LeaveCriticalSection(&(lock))
     #elif ARENA_HAS_THREADS == 3
     // Use pthread
-        /*
-         * TODO
-         */
+        #define ARENA_LOCK_TYPE pthread_mutex_t
+        #define ARENA_LOCK_INIT(lock) pthread_mutex_init(&(lock), NULL)
+        #define ARENA_LOCK_DESTROY(lock) pthread_mutex_destroy(&(lock))
+        #define ARENA_LOCK(lock) pthread_mutex_lock(&(lock))
+        #define ARENA_UNLOCK(lock) pthread_mutex_unlock(&(lock))
     #endif
 #else
     #include <signal.h>
     #define ARENA_LOCK_TYPE volatile sig_atomic_t
-    #define ARENA_LOCK_INIT 0
-    #define ARENA_LOCK_DESTROY(lock)
-    #define ARENA_LOCK(lock) while((lock))
+    #define ARENA_LOCK_INIT(lock) (lock) = 0
+    #define ARENA_LOCK_DESTROY(lock) (lock) = 0
+    #define ARENA_LOCK(lock)                \
+        {                                   \
+            ARENA_LOCK_TYPE expected = 0;   \
+            ARENA_LOCK_TYPE desired = 1;    \
+            while((lock) != expected)       \
+            {                               \
+                expected = 0;               \
+                desired = 1;                \
+            }                               \
+            (lock) = 1;                     \
+        }
     #define ARENA_UNLOCK(lock) (lock) = 0
 #endif
 
+#if !defined(ARENA_STATIC_CAP)
+    #define ARENA_STATIC_CAP (1024 * 1024 * 10)
+#endif
+
+#include <assert.h>
+
+static_assert((ARENA_STATIC_CAP >= 0) && (ARENA_STATIC_CAP % 10 == 0), "ARENA_STATIC_CAP must be a positive multiple of 10");
+
+#define ARENA_DEFAULT_ALIGN ARENA_ALIGNOF(max_align_t)
+
+/*
+ * TODO: Change `state` to store information about size of the allocated chunk to which belong
+ * the bytes, so it's possible to free them.
+ * TODO: Also, include a lock in the struct to make it thread-safe.
+ */
+typedef struct RawMemory
+{
+    char data[ARENA_STATIC_CAP / 10];
+    char state[ARENA_STATIC_CAP / 10];
+} raw_mem_t;
+
 typedef struct Arena
 {
-    struct Arena* next;
-    char* limit;
-    char* avail;
     ARENA_LOCK_TYPE lock;
+    struct Arena* next;
+    char* avail;
+    char* limit;
 } arena_t;
 
+#if defined(ARENA_ON_UNIX)
+void arena_set_mmap_threshold(size_t size);
+#endif
+void arenalloc_init();
+void arenalloc_deinit();
 
+/* Stack allocator API */
+void* arena_alloc(arena_t* arena, size_t size);
+void* arena_alloc_aligned(arena_t* arena, size_t size, size_t alignment);
+/*
+void* arena_calloc(arena_t* arena, size_t nmemb, size_t size);
+void* arena_calloc_aligned(arena_t* arena, size_t nmemb, size_t size, size_t alignment);
+void* arena_realloc(arena_t* arena, void* ptr, size_t size);
+void* arena_realloc_aligned(arena_t* arena, void* ptr, size_t size, size_t alignment);
+*/
+void  arena_free(arena_t* arena, void* ptr);
 
+/* Dynamic (heap) allocator API */
+void* arena_dyn_alloc(size_t size);
+void* arena_dyn_alloc_aligned(size_t size, size_t alignment);
+/*
+void* arena_dyn_calloc(size_t nmemb, size_t size);
+void* arena_dyn_calloc_aligned(size_t nmemb, size_t size, size_t alignment);
+void* arena_dyn_realloc(void* ptr, size_t size);
+void* arena_dyn_realloc_aligned(void* ptr, size_t size, size_t alignment);
+*/
+void  arena_dyn_free(void* ptr);
 
+ARENA_END_DECLS
 
 #endif // ARENALLOC_H
