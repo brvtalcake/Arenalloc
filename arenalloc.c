@@ -61,6 +61,7 @@ ARENA_BEGIN_DECLS
     #define ARENA_MMAP_THRESHOLD (128 * 1024)
 #endif
 
+static ARENA_LOCK_TYPE arena_raw_mem_morecore_lock;
 static raw_mem_t static_reserved_memory[10] = {
     [0] = { .data = { 0 }, .state = { 0 } },
     [1] = { .data = { 0 }, .state = { 0 } },
@@ -188,6 +189,7 @@ void arenalloc_init()
         initial_data_end = sbrk(0);
         ARENA_LOCK_INIT(arena_mmap_threshold_lock);
     #endif
+    ARENA_LOCK_INIT(arena_raw_mem_morecore_lock);
 
     atexit(arenalloc_deinit);
     #if (defined(ARENA_C) && ARENA_C >= 2011) || (defined(ARENA_CXX) && ARENA_CXX >= 2011)
@@ -211,6 +213,7 @@ void arenalloc_deinit()
         }
         ARENA_LOCK_DESTROY(arena_mmap_threshold_lock);
     #endif
+    ARENA_LOCK_DESTROY(arena_raw_mem_morecore_lock);
 
     arena_is_initialized = false;
     need_exit ? exit(EXIT_FAILURE) : (void)0;
@@ -226,11 +229,13 @@ static void arena_align_ptr(void** ptr, size_t align)
 // Search for `size` bytes of memory in the static reserved memory
 static void* arena_raw_mem_morecore(size_t size)
 {
+    ARENA_LOCK(arena_raw_mem_morecore_lock);
+    static size_t start_from[2] = { 0, 0 }; // i, j, in the loops below
     size_t total_free = 0;
     size_t free_count = 0;
-    for (size_t i = 0; i < 10; ++i)
+    for (size_t i = start_from[0]; i < 10; ++i)
     {
-        for (size_t j = 0; j < ARENA_STATIC_CAP / 10; ++j)
+        for (size_t j = start_from[1]; j < ARENA_STATIC_CAP / 10; ++j)
         {
             // TODO: Finish this
             if (static_reserved_memory[i].state[j] == 0)
@@ -241,6 +246,9 @@ static void* arena_raw_mem_morecore(size_t size)
                 {
                     void* ptr = static_reserved_memory[i].data + j - size;
                     memset(ptr, 0, size);
+                    start_from[0] = i;
+                    start_from[1] = j;
+                    ARENA_UNLOCK(arena_raw_mem_morecore_lock);
                     return ptr;
                 }
             }
@@ -251,6 +259,7 @@ static void* arena_raw_mem_morecore(size_t size)
         }
     }
 
+    ARENA_UNLOCK(arena_raw_mem_morecore_lock);
     return NULL;
 }
 ARENA_END_DECLS
