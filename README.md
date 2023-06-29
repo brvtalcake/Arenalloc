@@ -1,2 +1,3 @@
 # Arenalloc
-An arena allocator in pure C
+
+An arena-based allocator in C
