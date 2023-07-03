@@ -24,9 +24,9 @@ SOFTWARE.
 
 #include "arenalloc.h"
 
-ARENA_BEGIN_DECLS
-
 #include <errno.h>
+#include <inttypes.h>
+#include <limits.h>
 #include <stdalign.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -54,6 +54,41 @@ ARENA_BEGIN_DECLS
     #error "Unsupported platform"
 #endif
 
+#if defined(ARENA_POPCOUNT)
+    #undef ARENA_POPCOUNT
+#endif
+#define ARENA_POPCOUNT(x, size) ARENA_CAT(ARENA_POPCOUNT_, size)(x)
+
+#if defined(ARENA_POPCOUNT_8)
+    #undef ARENA_POPCOUNT_8
+#endif
+#if defined(ARENA_WITH_MSVC)
+    #include <intrin.h>
+    #define ARENA_POPCOUNT_8(x) ((uint8_t) __popcnt16((uint16_t) 0xFF & (uint16_t) x))
+#else
+    #define ARENA_POPCOUNT_8(x) ((uint8_t) __builtin_popcount((int) 0xFF & (int) x))
+#endif
+
+#if defined(ARENA_POPCOUNT_16)
+    #undef ARENA_POPCOUNT_16
+#endif
+#if defined(ARENA_WITH_MSVC)
+    #include <intrin.h>
+    #define ARENA_POPCOUNT_16(x) ((uint16_t) __popcnt16((uint16_t) 0xFFFF & (uint16_t) x))
+#else
+    #define ARENA_POPCOUNT_16(x) ((uint16_t) __builtin_popcount((int) 0xFFFF & (int) x))
+#endif
+
+#if defined(ARENA_POPCOUNT_32)
+    #undef ARENA_POPCOUNT_32
+#endif
+#if defined(ARENA_WITH_MSVC)
+    #include <intrin.h>
+    #define ARENA_POPCOUNT_32(x) ((uint32_t) __popcnt((uint32_t) 0xFFFFFFFF & (uint32_t) x))
+#else
+    #define ARENA_POPCOUNT_32(x) ((uint32_t) __builtin_popcountl((long) 0xFFFFFFFF & (long) x))
+#endif
+
 #if defined(ARENA_ON_UNIX) || defined(ARENA_ON_MACOS) || defined(ARENA_ON_ANDROID)
     #if defined(ARENA_MMAP_THRESHOLD)
         #undef ARENA_MMAP_THRESHOLD
@@ -77,6 +112,10 @@ static raw_mem_t static_reserved_memory[10] = {
 
 static bool arena_is_initialized = false;
 
+#if !defined(ARENA_DEBUG)
+static size_t bitmap_first_fit(size_t size, bit_map_t bitmap);
+static bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value);
+#endif
 static void arena_align_ptr(void** ptr, size_t align);
 static void* arena_raw_mem_morecore(size_t size);
 
@@ -219,15 +258,15 @@ void arenalloc_deinit()
     need_exit ? exit(EXIT_FAILURE) : (void)0;
 }
 
-static void arena_align_ptr(void** ptr, size_t align)
+/* static void arena_align_ptr(void** ptr, size_t align)
 {
     uintptr_t addr = (uintptr_t) *ptr;
     uintptr_t aligned_addr = (addr + align - 1) & -align;
     *ptr = (void*) aligned_addr;
-}
+} */
 
 // Search for `size` bytes of memory in the static reserved memory
-static void* arena_raw_mem_morecore(size_t size)
+/* static void* arena_raw_mem_morecore(size_t size)
 {
     ARENA_LOCK(arena_raw_mem_morecore_lock);
     static size_t start_from[2] = { 0, 0 }; // i, j, in the loops below
@@ -261,5 +300,112 @@ static void* arena_raw_mem_morecore(size_t size)
 
     ARENA_UNLOCK(arena_raw_mem_morecore_lock);
     return NULL;
+} */
+
+/*
+ * Each bit in the bitmap represents a byte in the `static` raw memory.
+ * If the bit is set, the byte is used, otherwise it is free. This function
+ * searches for `size` consecutive bytes of free memory in the `static` raw.
+ */
+#if !defined(ARENA_DEBUG)
+static
+#endif
+size_t bitmap_first_fit(size_t size, bit_map_t bitmap)
+{
+    size_t available = 0;
+    /* Iterates over the bitmap bytes: each `i` represents a byte in the bitmap */
+    for (size_t i = 0; i < ARENA_BITMAP_SIZE; ++i)
+    {
+        uint8_t popcount = ARENA_POPCOUNT(bitmap[i], 8);
+        if (popcount == 0)
+        {
+            available += 8;
+            if (available >= size)
+                return (i * 8) - available;
+            else
+                continue;
+        }
+        else if (popcount == 8)
+        {
+            available = 0;
+            continue;
+        }
+        else
+        {
+            /* Iterates over the bits in the byte: each `j` represents a bit in the byte */
+            for (size_t j = 0; j < 8; ++j)
+            {
+                if ((bitmap[i] & (1 << j)) == 0)
+                {
+                    ++available;
+                    if (available >= size)
+                        return (i * 8) + j - available;
+                }
+                else
+                {
+                    available = 0;
+                }
+            }
+        }
+    }
+
+    return (size_t) (-1);
 }
-ARENA_END_DECLS
+
+#if !defined(ARENA_DEBUG)
+static
+#endif
+bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value)
+{
+    if (start + size > ARENA_BITMAP_SIZE * 8)
+        return false;
+
+    if (value)
+    {
+        // Assert previously free
+        for (size_t i = start; i < start + size; ++i)
+        {
+            bool cond = (bitmap[i / 8] & (1 << (i % 8))) == 0;
+            ARENA_ASSERT(cond);
+            // In case of NDEBUG, we return false if the assertion fails
+            if (!cond)
+                return false;
+        }
+    }
+    else
+    {
+        // Assert previously used
+        for (size_t i = start; i < start + size; ++i)
+        {
+            bool cond = (bitmap[i / 8] & (1 << (i % 8))) != 0;
+            ARENA_ASSERT(cond);
+            // In case of NDEBUG, we return false if the assertion fails, too
+            if (!cond)
+                return false;
+        }
+    }
+
+    for (size_t i = start; i < start + size; ++i)
+    {
+        if (value)
+            bitmap[i / 8] |= (1 << (i % 8));
+        else
+            bitmap[i / 8] &= ~(1 << (i % 8));
+    }
+
+    return true;
+}
+
+#if defined(ARENA_DEBUG)
+
+void bitmap_print(FILE* stream, size_t start, size_t size, bit_map_t bitmap)
+{
+    for (size_t i = start; i < start + size; ++i)
+    {
+        fprintf(stream, ((i % 8 == 0) && (i != 0) ? " " : ""));
+        fprintf(stream, "%" PRIu8, (bitmap[i / 8] & (1 << (i % 8))) != 0);
+    }
+    fprintf(stream, "\n");
+}
+
+#endif

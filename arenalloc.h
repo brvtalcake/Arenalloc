@@ -25,6 +25,10 @@ SOFTWARE.
 #ifndef ARENALLOC_H
 #define ARENALLOC_H
 
+#if defined(__INTELLISENSE__)
+    #define ARENA_DEBUG 1
+#endif
+
 #include <stddef.h>
 
 #if defined(ARENA_NAMESPACE)
@@ -117,14 +121,14 @@ SOFTWARE.
 #if defined(ARENA_END_DECLS)
     #undef ARENA_END_DECLS
 #endif
-#if defined(ARENA_DEFAULT_ALIGN)
-    #undef ARENA_DEFAULT_ALIGN
-#endif
 #if defined(ARENA_ALIGNAS)
     #undef ARENA_ALIGNAS
 #endif
 #if defined(ARENA_ALIGNOF)
     #undef ARENA_ALIGNOF
+#endif
+#if defined(ARENA_BITMAP_SIZE)
+    #undef ARENA_BITMAP_SIZE
 #endif
 
 #define ARENA_CAT_REDIRECT(x, y) x##y
@@ -410,6 +414,13 @@ ARENA_BEGIN_DECLS
 #define ARENA_LOCK_INT_TYPE int16_t
 #define ARENA_MK_LOCK_INT_TYPE(value) INT16_C(value)
 
+#if defined(ARENA_CXX) && !defined(ARENA_C)
+    #undef ARENA_ATOMIC_SPECIFIED_TYPE
+    #undef ARENA_ATOMIC_QUALIFIED_TYPE
+    #define ARENA_ATOMIC_SPECIFIED_TYPE(type) type
+    #define ARENA_ATOMIC_QUALIFIED_TYPE(type) type
+#endif
+
 #if ARENA_THREAD_SAFE == 1
     #if ARENA_HAS_ATOMIC != 0
         #if ARENA_HAS_ATOMIC == 1
@@ -547,10 +558,21 @@ ARENA_BEGIN_DECLS
 
 #include <assert.h>
 
-static_assert((ARENA_STATIC_CAP >= 0) && (ARENA_STATIC_CAP % 10 == 0), "ARENA_STATIC_CAP must be a positive multiple of 10");
+#if !defined(ARENA_ASSERT)
+    #define ARENA_ASSERT(x) assert(x)
+#endif
 
-#define ARENA_DEFAULT_ALIGN ARENA_ALIGNOF(max_align_t)
+static_assert((ARENA_STATIC_CAP >= 0) && (ARENA_STATIC_CAP % 10 == 0) && ((ARENA_STATIC_CAP / 10) % 8 == 0), "ARENA_STATIC_CAP must be a positive and divisible by 10 and (ARENA_STATIC_CAP / 10) must be divisible by 8 (ARENA_STATIC_CAP must be divisible by 80)");
 
+#if !defined(ARENA_DEFAULT_ALIGN)
+    #define ARENA_DEFAULT_ALIGN ARENA_ALIGNOF(max_align_t)
+#endif
+
+static_assert(ARENA_DEFAULT_ALIGN >= 1, "ARENA_DEFAULT_ALIGN must be greater than or equal to 1");
+
+#define ARENA_BITMAP_SIZE (ARENA_STATIC_CAP / 80)
+
+typedef uint8_t bit_map_t[ARENA_BITMAP_SIZE];
 /*
  * TODO: Change `state` to store information about size of the allocated chunk to which belong
  * the bytes, so it's possible to free them.
@@ -559,7 +581,7 @@ static_assert((ARENA_STATIC_CAP >= 0) && (ARENA_STATIC_CAP % 10 == 0), "ARENA_ST
 typedef struct RawMemory
 {
     char data[ARENA_STATIC_CAP / 10];
-    char state[ARENA_STATIC_CAP / 10];
+    bit_map_t state;
 } raw_mem_t;
 
 typedef struct Arena
@@ -570,33 +592,19 @@ typedef struct Arena
     char* limit;
 } arena_t;
 
-#if defined(ARENA_ON_UNIX)
+#if defined(ARENA_DEBUG)
+    #include <stdio.h>
+    #include <stdbool.h>
+bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value);
+size_t bitmap_first_fit(size_t size, bit_map_t bitmap);
+void bitmap_print(FILE* stream, size_t start, size_t size, bit_map_t bitmap);
+#endif
+
+#if defined(ARENA_ON_UNIX) || defined(ARENA_ON_MACOS) || defined(ARENA_ON_ANDROID)
 void arena_set_mmap_threshold(size_t size);
 #endif
 void arenalloc_init();
 void arenalloc_deinit();
-
-/* Stack allocator API */
-void* arena_alloc(arena_t* arena, size_t size);
-void* arena_alloc_aligned(arena_t* arena, size_t size, size_t alignment);
-/*
-void* arena_calloc(arena_t* arena, size_t nmemb, size_t size);
-void* arena_calloc_aligned(arena_t* arena, size_t nmemb, size_t size, size_t alignment);
-void* arena_realloc(arena_t* arena, void* ptr, size_t size);
-void* arena_realloc_aligned(arena_t* arena, void* ptr, size_t size, size_t alignment);
-*/
-void  arena_free(arena_t* arena, void* ptr);
-
-/* Dynamic (heap) allocator API */
-void* arena_dyn_alloc(size_t size);
-void* arena_dyn_alloc_aligned(size_t size, size_t alignment);
-/*
-void* arena_dyn_calloc(size_t nmemb, size_t size);
-void* arena_dyn_calloc_aligned(size_t nmemb, size_t size, size_t alignment);
-void* arena_dyn_realloc(void* ptr, size_t size);
-void* arena_dyn_realloc_aligned(void* ptr, size_t size, size_t alignment);
-*/
-void  arena_dyn_free(void* ptr);
 
 ARENA_END_DECLS
 
