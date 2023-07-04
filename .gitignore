@@ -55,3 +55,5 @@ main.c
 test.c
 prog
 .vscode/**
+arenalloc.S
+prog.S

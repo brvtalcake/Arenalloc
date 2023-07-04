@@ -96,6 +96,17 @@ SOFTWARE.
     #define ARENA_MMAP_THRESHOLD (128 * 1024)
 #endif
 
+#if defined(ARENA_BITMAP_BIT_INDEX)
+    #undef ARENA_BITMAP_BIT_INDEX
+#endif
+// TODO: Can we just do `((u8_byte) & (1 << i))`?
+#define ARENA_BITMAP_BIT_INDEX(u8_byte, i) ((((u8_byte) >> (7 - (i))) & UINT8_C(0x1)) != 0)
+
+/*
+ * Memory related stuff
+ * {
+ */
+
 static ARENA_LOCK_TYPE arena_raw_mem_morecore_lock;
 static raw_mem_t static_reserved_memory[10] = {
     [0] = { .data = { 0 }, .state = { 0 } },
@@ -110,10 +121,13 @@ static raw_mem_t static_reserved_memory[10] = {
     [9] = { .data = { 0 }, .state = { 0 } }
 };
 
+/*
+ * }
+ */
 static bool arena_is_initialized = false;
 
 #if !defined(ARENA_DEBUG)
-static size_t bitmap_first_fit(size_t size, bit_map_t bitmap);
+static size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap);
 static bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value);
 #endif
 static void arena_align_ptr(void** ptr, size_t align);
@@ -310,8 +324,10 @@ void arenalloc_deinit()
 #if !defined(ARENA_DEBUG)
 static
 #endif
-size_t bitmap_first_fit(size_t size, bit_map_t bitmap)
+size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
 {
+    /* The byte in the .data array of raw_mem_t objects (which is represented by the first bit in the first byte of the bitmap) is aligned on ARENA_STATIC_MEM_DEFAULT_ALIGN */
+    static const size_t base_align = ARENA_STATIC_MEM_DEFAULT_ALIGN;
     size_t available = 0;
     /* Iterates over the bitmap bytes: each `i` represents a byte in the bitmap */
     for (size_t i = 0; i < ARENA_BITMAP_SIZE; ++i)
@@ -321,7 +337,43 @@ size_t bitmap_first_fit(size_t size, bit_map_t bitmap)
         {
             available += 8;
             if (available >= size)
-                return (i * 8) - available;
+            {
+                // Consider alignment
+                size_t prev_available = available;
+                bool break_and_continue = false;
+                while (((size_t) ((i + 1) * 8) - available) % align != 0)
+                {
+                    if (available == 0)
+                    {
+                        break_and_continue = true;
+                        available = prev_available;
+                        break;
+                    }
+                    --available;
+                    if (available < size)
+                    {
+                        break_and_continue = true;
+                        available = prev_available;
+                        break;
+                    }
+                }
+
+                if (break_and_continue)
+                {
+                    available = prev_available;
+                    continue;
+                }
+
+                bool aligned = (((size_t) ((i + 1) * 8) - available) % align == 0);
+                bool positive = (((size_t) ((i + 1) * 8) - available) >= 0);
+                ARENA_ASSERT(aligned && positive);
+                if (!aligned || !positive)
+                    return (size_t) (-1);
+
+                if (!bitmap_set(((i + 1) * 8) - available, size, bitmap, true))
+                    return (size_t) (-1);
+                return ((i + 1) * 8) - available;
+            }
             else
                 continue;
         }
@@ -335,11 +387,47 @@ size_t bitmap_first_fit(size_t size, bit_map_t bitmap)
             /* Iterates over the bits in the byte: each `j` represents a bit in the byte */
             for (size_t j = 0; j < 8; ++j)
             {
-                if ((bitmap[i] & (1 << j)) == 0)
+                /* We start from the most significant bit, i.e. the leftmost bit */
+                if (ARENA_BITMAP_BIT_INDEX(bitmap[i], j) == 0)
                 {
                     ++available;
                     if (available >= size)
-                        return (i * 8) + j - available;
+                    {
+                        size_t prev_available = available;
+                        bool break_and_continue = false;
+                        while (((size_t) (i * 8) + j + 1 - available) % align != 0)
+                        {
+                            if (available == 0)
+                            {
+                                break_and_continue = true;
+                                available = prev_available;
+                                break;
+                            }
+                            --available;
+                            if (available < size)
+                            {
+                                break_and_continue = true;
+                                available = prev_available;
+                                break;
+                            }
+                        }
+
+                        if (break_and_continue)
+                        {
+                            available = prev_available;
+                            continue;
+                        }
+
+                        bool aligned = (((size_t) (i * 8) + j + 1 - available) % align == 0);
+                        bool positive = (((size_t) (i * 8) + j + 1 - available) >= 0);
+                        ARENA_ASSERT(aligned && positive);
+                        if (!aligned || !positive)
+                            return (size_t) (-1);
+                        
+                        if (!bitmap_set((i * 8) + j + 1 - available, size, bitmap, true))
+                            return (size_t) (-1);
+                        return (i * 8) + j + 1 - available;
+                    }
                 }
                 else
                 {
@@ -365,7 +453,7 @@ bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value)
         // Assert previously free
         for (size_t i = start; i < start + size; ++i)
         {
-            bool cond = (bitmap[i / 8] & (1 << (i % 8))) == 0;
+            bool cond = (bitmap[i / 8] & (1 << (7 - (i % 8)))) == 0;
             ARENA_ASSERT(cond);
             // In case of NDEBUG, we return false if the assertion fails
             if (!cond)
@@ -377,7 +465,7 @@ bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value)
         // Assert previously used
         for (size_t i = start; i < start + size; ++i)
         {
-            bool cond = (bitmap[i / 8] & (1 << (i % 8))) != 0;
+            bool cond = (bitmap[i / 8] & (1 << (7 - (i % 8)))) != 0;
             ARENA_ASSERT(cond);
             // In case of NDEBUG, we return false if the assertion fails, too
             if (!cond)
@@ -388,9 +476,9 @@ bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value)
     for (size_t i = start; i < start + size; ++i)
     {
         if (value)
-            bitmap[i / 8] |= (1 << (i % 8));
+            bitmap[i / 8] |= (1 << (7 - (i % 8)));
         else
-            bitmap[i / 8] &= ~(1 << (i % 8));
+            bitmap[i / 8] &= ~(1 << (7 - (i % 8)));
     }
 
     return true;
@@ -403,7 +491,7 @@ void bitmap_print(FILE* stream, size_t start, size_t size, bit_map_t bitmap)
     for (size_t i = start; i < start + size; ++i)
     {
         fprintf(stream, ((i % 8 == 0) && (i != 0) ? " " : ""));
-        fprintf(stream, "%" PRIu8, (bitmap[i / 8] & (1 << (i % 8))) != 0);
+        fprintf(stream, "%" PRIu8, (bitmap[i / 8] & (1 << (7 - (i % 8)))) != 0);
     }
     fprintf(stream, "\n");
 }

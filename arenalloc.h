@@ -572,6 +572,10 @@ static_assert(ARENA_DEFAULT_ALIGN >= 1, "ARENA_DEFAULT_ALIGN must be greater tha
 
 #define ARENA_BITMAP_SIZE (ARENA_STATIC_CAP / 80)
 
+#if !defined(ARENA_STATIC_MEM_DEFAULT_ALIGN)
+    #define ARENA_STATIC_MEM_DEFAULT_ALIGN 512
+#endif
+
 typedef uint8_t bit_map_t[ARENA_BITMAP_SIZE];
 /*
  * TODO: Change `state` to store information about size of the allocated chunk to which belong
@@ -580,6 +584,7 @@ typedef uint8_t bit_map_t[ARENA_BITMAP_SIZE];
  */
 typedef struct RawMemory
 {
+    ARENA_ALIGNAS(ARENA_STATIC_MEM_DEFAULT_ALIGN)
     char data[ARENA_STATIC_CAP / 10];
     bit_map_t state;
 } raw_mem_t;
@@ -596,7 +601,7 @@ typedef struct Arena
     #include <stdio.h>
     #include <stdbool.h>
 bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value);
-size_t bitmap_first_fit(size_t size, bit_map_t bitmap);
+size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap);
 void bitmap_print(FILE* stream, size_t start, size_t size, bit_map_t bitmap);
 #endif
 
