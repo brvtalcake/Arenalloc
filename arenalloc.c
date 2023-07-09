@@ -102,43 +102,124 @@ SOFTWARE.
 // TODO: Can we just do `((u8_byte) & (1 << i))`?
 #define ARENA_BITMAP_BIT_INDEX(u8_byte, i) ((((u8_byte) >> (7 - (i))) & UINT8_C(0x1)) != 0)
 
+#if defined(INIT_RAW_MEM_T)
+    #undef INIT_RAW_MEM_T
+#endif
+#define INIT_RAW_MEM_T { .data = { 0 }, .state = { 0 }, .region_sizes = NULL, .region_count = 0 }
+
+// TODO: Make all source-file-scope function declarations static only if ARENA_DEBUG is not defined
+
 /*
  * Memory related stuff
  * {
  */
 
-static ARENA_LOCK_TYPE arena_raw_mem_morecore_lock;
+static ARENA_LOCK_TYPE arena_raw_mem_lock;
 static raw_mem_t static_reserved_memory[10] = {
-    [0] = { .data = { 0 }, .state = { 0 } },
-    [1] = { .data = { 0 }, .state = { 0 } },
-    [2] = { .data = { 0 }, .state = { 0 } },
-    [3] = { .data = { 0 }, .state = { 0 } },
-    [4] = { .data = { 0 }, .state = { 0 } },
-    [5] = { .data = { 0 }, .state = { 0 } },
-    [6] = { .data = { 0 }, .state = { 0 } },
-    [7] = { .data = { 0 }, .state = { 0 } },
-    [8] = { .data = { 0 }, .state = { 0 } },
-    [9] = { .data = { 0 }, .state = { 0 } }
+    [0] = INIT_RAW_MEM_T,
+    [1] = INIT_RAW_MEM_T,
+    [2] = INIT_RAW_MEM_T,
+    [3] = INIT_RAW_MEM_T,
+    [4] = INIT_RAW_MEM_T,
+    [5] = INIT_RAW_MEM_T,
+    [6] = INIT_RAW_MEM_T,
+    [7] = INIT_RAW_MEM_T,
+    [8] = INIT_RAW_MEM_T,
+    [9] = INIT_RAW_MEM_T
 };
 
 /*
- * }
+ * } // Memory related stuff
  */
+
+/*
+ * Library state related stuff
+ * {
+ */
+
 static bool arena_is_initialized = false;
+#if defined(ARENA_ON_UNIX) || defined(ARENA_ON_MACOS) || defined(ARENA_ON_ANDROID)
+static void* initial_data_end = NULL;
+static ARENA_LOCK_TYPE arena_mmap_threshold_lock;
+static size_t arena_mmap_threshold = ARENA_MMAP_THRESHOLD;
+#endif
+
+/*
+ * } // Library state related stuff
+ */
+
+/* 
+ * Functions' forward declarations
+ * {
+ */
+
+    /*
+     * Global utility functions
+     * {
+     */
+
+static uintptr_t arena_align_ptr(void** ptr, size_t align);
+#if defined(ARENA_ON_UNIX)
+static void* arena_morecore_unix(size_t size);
+#elif defined(ARENA_ON_MACOS)
+static void* arena_morecore_macos(size_t size);
+#elif defined(ARENA_ON_ANDROID)
+static void* arena_morecore_android(size_t size);
+#elif defined(ARENA_ON_WINDOWS)
+static void* arena_morecore_windows(size_t size);
+#else
+    #error "Unsupported platform"
+#endif
+
+#if !defined(ARENA_DEBUG)
+#if defined(arena_raw_mem_alloc)
+    #undef arena_raw_mem_alloc
+#endif
+#define arena_raw_mem_alloc(...)                                                                    \
+    ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 0))                                           \
+    (ARENA_STATIC_ASSERT(false, "arena_raw_mem_alloc() must be called with at least one argument"), NULL) \
+    (ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 1))                                          \
+        (arena_raw_mem_alloc_default(__VA_ARGS__))                                                  \
+        (arena_raw_mem_alloc_aligned(__VA_ARGS__)))
+
+static void* arena_raw_mem_alloc_default(size_t size);
+static void* arena_raw_mem_alloc_aligned(size_t size, size_t align);
+#endif
+
+    /*
+     * } // Global utility functions
+     */
+
+    /*
+     * Raw memory related stuff
+     * {
+     */
+
+        /*
+         * Bitmap related stuff
+         * {
+         */
 
 #if !defined(ARENA_DEBUG)
 static size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap);
 static bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value);
 #endif
-static void arena_align_ptr(void** ptr, size_t align);
-static void* arena_raw_mem_morecore(size_t size);
+        /*
+         * } // Bitmap related stuff
+         */
+#if !defined(ARENA_DEBUG)
+static void* arena_raw_mem_alloc_default(size_t size);
+static void* arena_raw_mem_alloc_aligned(size_t size, size_t align);
+#endif
+    /*
+     * } // Raw memory related stuff
+     */
+
+/*
+ * } // Functions' forward declarations
+ */
 
 #if defined(ARENA_ON_UNIX) || defined(ARENA_ON_MACOS) || defined(ARENA_ON_ANDROID)
-
-static void* initial_data_end = NULL;
-
-static ARENA_LOCK_TYPE arena_mmap_threshold_lock;
-static size_t arena_mmap_threshold = ARENA_MMAP_THRESHOLD;
 
 void arena_set_mmap_threshold(size_t size)
 {
@@ -224,13 +305,15 @@ static void* arena_morecore_android(size_t size)
 
 #endif
 
-#else
+#elif defined(ARENA_ON_WINDOWS)
 
 static void* arena_morecore_windows(size_t size)
 {
 
 }
 
+#else
+    #error "Unsupported platform"
 #endif
 
 void arenalloc_init()
@@ -242,7 +325,7 @@ void arenalloc_init()
         initial_data_end = sbrk(0);
         ARENA_LOCK_INIT(arena_mmap_threshold_lock);
     #endif
-    ARENA_LOCK_INIT(arena_raw_mem_morecore_lock);
+    ARENA_LOCK_INIT(arena_raw_mem_lock);
 
     atexit(arenalloc_deinit);
     #if (defined(ARENA_C) && ARENA_C >= 2011) || (defined(ARENA_CXX) && ARENA_CXX >= 2011)
@@ -266,68 +349,66 @@ void arenalloc_deinit()
         }
         ARENA_LOCK_DESTROY(arena_mmap_threshold_lock);
     #endif
-    ARENA_LOCK_DESTROY(arena_raw_mem_morecore_lock);
+    ARENA_LOCK_DESTROY(arena_raw_mem_lock);
 
     arena_is_initialized = false;
     need_exit ? exit(EXIT_FAILURE) : (void)0;
 }
 
-/* static void arena_align_ptr(void** ptr, size_t align)
+static uintptr_t arena_align_ptr(void** ptr, size_t align)
 {
+    uintptr_t offset = 0;
     uintptr_t addr = (uintptr_t) *ptr;
     uintptr_t aligned_addr = (addr + align - 1) & -align;
     *ptr = (void*) aligned_addr;
-} */
+    offset = aligned_addr - addr;
+    return offset;
+}
 
+#if !defined(ARENA_DEBUG)
+static
+#endif
 // Search for `size` bytes of memory in the static reserved memory
-/* static void* arena_raw_mem_morecore(size_t size)
+void* arena_raw_mem_alloc_default(size_t size)
 {
-    ARENA_LOCK(arena_raw_mem_morecore_lock);
-    static size_t start_from[2] = { 0, 0 }; // i, j, in the loops below
-    size_t total_free = 0;
-    size_t free_count = 0;
-    for (size_t i = start_from[0]; i < 10; ++i)
-    {
-        for (size_t j = start_from[1]; j < ARENA_STATIC_CAP / 10; ++j)
-        {
-            // TODO: Finish this
-            if (static_reserved_memory[i].state[j] == 0)
-            {
-                ++free_count;
-                ++total_free;
-                if (free_count == size + 1)
-                {
-                    void* ptr = static_reserved_memory[i].data + j - size;
-                    memset(ptr, 0, size);
-                    start_from[0] = i;
-                    start_from[1] = j;
-                    ARENA_UNLOCK(arena_raw_mem_morecore_lock);
-                    return ptr;
-                }
-            }
-            else
-            {
-                free_count = 0;
-            }
-        }
-    }
+    return arena_raw_mem_alloc_aligned(size, ARENA_DEFAULT_ALIGN);
+}
 
-    ARENA_UNLOCK(arena_raw_mem_morecore_lock);
-    return NULL;
-} */
+ARENA_ALLOCATOR((), (1), 2)
+#if !defined(ARENA_DEBUG)
+static
+#endif
+void* arena_raw_mem_alloc_aligned(size_t size, size_t align)
+{
 
+}
+
+ARENA_STATIC_ASSERT(ARENA_STATIC_MEM_BASE_ALIGN >= ARENA_STATIC_MEM_MAX_ALIGN_REQUEST, "ARENA_STATIC_MEM_BASE_ALIGN must be greater than or equal to ARENA_STATIC_MEM_MAX_ALIGN_REQUEST");
+#if !defined(ARENA_DEBUG)
+static
+#endif
 /*
  * Each bit in the bitmap represents a byte in the `static` raw memory.
  * If the bit is set, the byte is used, otherwise it is free. This function
  * searches for `size` consecutive bytes of free memory in the `static` raw.
  */
-#if !defined(ARENA_DEBUG)
-static
-#endif
 size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
 {
-    /* The byte in the .data array of raw_mem_t objects (which is represented by the first bit in the first byte of the bitmap) is aligned on ARENA_STATIC_MEM_DEFAULT_ALIGN */
-    static const size_t base_align = ARENA_STATIC_MEM_DEFAULT_ALIGN;
+    /* The first `char` (byte) in the .data array of raw_mem_t objects
+     * (which is represented by the first bit in the first byte of the bitmap) is aligned on ARENA_STATIC_MEM_BASE_ALIGN 
+     *
+     * TODO: Do something with base_align.
+     */
+    static const size_t base_align = ARENA_STATIC_MEM_BASE_ALIGN;
+    static const size_t max_align_request = ARENA_STATIC_MEM_MAX_ALIGN_REQUEST;
+
+    bool needed_to_lock = false;
+    if (!ARENA_LOCK_IS_LOCKED(arena_raw_mem_lock))
+    {
+        ARENA_LOCK(arena_raw_mem_lock);
+        needed_to_lock = true;
+    }
+    size_t ret_val = (size_t) (-1);
     size_t available = 0;
     /* Iterates over the bitmap bytes: each `i` represents a byte in the bitmap */
     for (size_t i = 0; i < ARENA_BITMAP_SIZE; ++i)
@@ -368,11 +449,19 @@ size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
                 bool positive = (((size_t) ((i + 1) * 8) - available) >= 0);
                 ARENA_ASSERT(aligned && positive);
                 if (!aligned || !positive)
-                    return (size_t) (-1);
+                {
+                    ret_val = (size_t) (-1);
+                    goto ret_point;
+                }
 
                 if (!bitmap_set(((i + 1) * 8) - available, size, bitmap, true))
-                    return (size_t) (-1);
-                return ((i + 1) * 8) - available;
+                {
+                    ret_val = (size_t) (-1);
+                    goto ret_point;
+                }
+
+                ret_val = ((i + 1) * 8) - available;
+                goto ret_point;
             }
             else
                 continue;
@@ -422,11 +511,19 @@ size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
                         bool positive = (((size_t) (i * 8) + j + 1 - available) >= 0);
                         ARENA_ASSERT(aligned && positive);
                         if (!aligned || !positive)
-                            return (size_t) (-1);
+                        {
+                            ret_val = (size_t) (-1);
+                            goto ret_point;
+                        }
                         
                         if (!bitmap_set((i * 8) + j + 1 - available, size, bitmap, true))
-                            return (size_t) (-1);
-                        return (i * 8) + j + 1 - available;
+                        {
+                            ret_val = (size_t) (-1);
+                            goto ret_point;
+                        }
+
+                        ret_val = (i * 8) + j + 1 - available;
+                        goto ret_point;
                     }
                 }
                 else
@@ -437,7 +534,12 @@ size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
         }
     }
 
-    return (size_t) (-1);
+ret_point:
+    if(needed_to_lock)
+    {
+        ARENA_UNLOCK(arena_raw_mem_lock);
+    }
+    return ret_val;
 }
 
 #if !defined(ARENA_DEBUG)
