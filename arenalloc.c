@@ -105,7 +105,7 @@ SOFTWARE.
 #if defined(INIT_RAW_MEM_T)
     #undef INIT_RAW_MEM_T
 #endif
-#define INIT_RAW_MEM_T { .data = { 0 }, .state = { 0 }, .region_sizes = NULL, .region_count = 0 }
+#define INIT_RAW_MEM_T { .data = { 0 }, .state = { 0 }, .original_pointer = NULL, .region_sizes = NULL, .region_count = 0, .kind = ARENA_STATIC_MEM }
 
 // TODO: Make all source-file-scope function declarations static only if ARENA_DEBUG is not defined
 
@@ -114,7 +114,7 @@ SOFTWARE.
  * {
  */
 
-static ARENA_LOCK_TYPE arena_raw_mem_lock;
+static ARENA_LOCK_TYPE arena_static_mem_lock;
 static raw_mem_t static_reserved_memory[10] = {
     [0] = INIT_RAW_MEM_T,
     [1] = INIT_RAW_MEM_T,
@@ -172,18 +172,18 @@ static void* arena_morecore_windows(size_t size);
 #endif
 
 #if !defined(ARENA_DEBUG)
-#if defined(arena_raw_mem_alloc)
-    #undef arena_raw_mem_alloc
+#if defined(arena_static_mem_alloc)
+    #undef arena_static_mem_alloc
 #endif
-#define arena_raw_mem_alloc(...)                                                                    \
+#define arena_static_mem_alloc(...)                                                                    \
     ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 0))                                           \
-    (ARENA_STATIC_ASSERT(false, "arena_raw_mem_alloc() must be called with at least one argument"), NULL) \
+    (ARENA_STATIC_ASSERT(false, "arena_static_mem_alloc() must be called with at least one argument"), NULL) \
     (ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 1))                                          \
-        (arena_raw_mem_alloc_default(__VA_ARGS__))                                                  \
-        (arena_raw_mem_alloc_aligned(__VA_ARGS__)))
+        (arena_static_mem_alloc_default(__VA_ARGS__))                                                  \
+        (arena_static_mem_alloc_aligned(__VA_ARGS__)))
 
-static void* arena_raw_mem_alloc_default(size_t size);
-static void* arena_raw_mem_alloc_aligned(size_t size, size_t align);
+static void* arena_static_mem_alloc_default(size_t size);
+static void* arena_static_mem_alloc_aligned(size_t size, size_t align);
 #endif
 
     /*
@@ -201,15 +201,15 @@ static void* arena_raw_mem_alloc_aligned(size_t size, size_t align);
          */
 
 #if !defined(ARENA_DEBUG)
-static size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap);
+static size_t bitmap_first_fit(size_t size, size_t align, const char* const data, bit_map_t bitmap);
 static bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value);
 #endif
         /*
          * } // Bitmap related stuff
          */
 #if !defined(ARENA_DEBUG)
-static void* arena_raw_mem_alloc_default(size_t size);
-static void* arena_raw_mem_alloc_aligned(size_t size, size_t align);
+static void* arena_static_mem_alloc_default(size_t size);
+static void* arena_static_mem_alloc_aligned(size_t size, size_t align);
 #endif
     /*
      * } // Raw memory related stuff
@@ -325,7 +325,23 @@ void arenalloc_init()
         initial_data_end = sbrk(0);
         ARENA_LOCK_INIT(arena_mmap_threshold_lock);
     #endif
-    ARENA_LOCK_INIT(arena_raw_mem_lock);
+    ARENA_LOCK_INIT(arena_static_mem_lock);
+
+    ARENA_LOCK(arena_static_mem_lock);
+    for (size_t i = 0; i < 10; ++i)
+    {
+        // TODO: Use arena_morecore() instead of malloc()
+        static_reserved_memory[i].region_sizes = malloc(1 * sizeof(size_t));
+        if (static_reserved_memory[i].region_sizes == NULL)
+        {
+            fprintf(stderr, "Failed to initialize arena: %s\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        static_reserved_memory[i].region_count = 1;
+        static_reserved_memory[i].region_sizes[0] = ARENA_STATIC_CAP / 10;
+        static_reserved_memory[i].original_pointer = &static_reserved_memory[i].data[0]; // Doesn't change for statically allocated memory
+    }
+    ARENA_UNLOCK(arena_static_mem_lock);
 
     atexit(arenalloc_deinit);
     #if (defined(ARENA_C) && ARENA_C >= 2011) || (defined(ARENA_CXX) && ARENA_CXX >= 2011)
@@ -341,6 +357,18 @@ void arenalloc_deinit()
 
     bool need_exit = false;
     errno = 0;
+
+    ARENA_LOCK(arena_static_mem_lock);
+    for (size_t i = 0; i < 10; ++i)
+    {
+        if (static_reserved_memory[i].region_sizes != NULL)
+        {
+            free(static_reserved_memory[i].region_sizes);
+            static_reserved_memory[i].region_sizes = NULL;
+        }
+    }
+    ARENA_UNLOCK(arena_static_mem_lock);
+    
     #if defined(ARENA_ON_UNIX) || defined(ARENA_ON_MACOS) || defined(ARENA_ON_ANDROID)
         if (brk(initial_data_end) == -1 && initial_data_end != sbrk(0))
         {
@@ -349,7 +377,7 @@ void arenalloc_deinit()
         }
         ARENA_LOCK_DESTROY(arena_mmap_threshold_lock);
     #endif
-    ARENA_LOCK_DESTROY(arena_raw_mem_lock);
+    ARENA_LOCK_DESTROY(arena_static_mem_lock);
 
     arena_is_initialized = false;
     need_exit ? exit(EXIT_FAILURE) : (void)0;
@@ -369,18 +397,17 @@ static uintptr_t arena_align_ptr(void** ptr, size_t align)
 static
 #endif
 // Search for `size` bytes of memory in the static reserved memory
-void* arena_raw_mem_alloc_default(size_t size)
+void* arena_static_mem_alloc_default(size_t size)
 {
-    return arena_raw_mem_alloc_aligned(size, ARENA_DEFAULT_ALIGN);
+    return arena_static_mem_alloc_aligned(size, ARENA_DEFAULT_ALIGN);
 }
 
 ARENA_ALLOCATOR((), (1), 2)
 #if !defined(ARENA_DEBUG)
 static
 #endif
-void* arena_raw_mem_alloc_aligned(size_t size, size_t align)
+void* arena_static_mem_alloc_aligned(size_t size, size_t align)
 {
-
 }
 
 ARENA_STATIC_ASSERT(ARENA_STATIC_MEM_BASE_ALIGN >= ARENA_STATIC_MEM_MAX_ALIGN_REQUEST, "ARENA_STATIC_MEM_BASE_ALIGN must be greater than or equal to ARENA_STATIC_MEM_MAX_ALIGN_REQUEST");
@@ -392,26 +419,26 @@ static
  * If the bit is set, the byte is used, otherwise it is free. This function
  * searches for `size` consecutive bytes of free memory in the `static` raw.
  */
-size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
+size_t bitmap_first_fit(size_t size, size_t align, const char* const data, bit_map_t bitmap)
 {
-    /* The first `char` (byte) in the .data array of raw_mem_t objects
-     * (which is represented by the first bit in the first byte of the bitmap) is aligned on ARENA_STATIC_MEM_BASE_ALIGN 
-     *
-     * TODO: Do something with base_align.
-     */
-    static const size_t base_align = ARENA_STATIC_MEM_BASE_ALIGN;
-    static const size_t max_align_request = ARENA_STATIC_MEM_MAX_ALIGN_REQUEST;
+    static size_t start_from = 0;
 
     bool needed_to_lock = false;
-    if (!ARENA_LOCK_IS_LOCKED(arena_raw_mem_lock))
+    if (ARENA_LOCK_IS_LOCKED(arena_static_mem_lock) && ARENA_LOCK_IS_MINE(arena_static_mem_lock)) goto skip_lock;
+    else
     {
-        ARENA_LOCK(arena_raw_mem_lock);
+        ARENA_LOCK(arena_static_mem_lock);
         needed_to_lock = true;
     }
+
+skip_lock:
     size_t ret_val = (size_t) (-1);
     size_t available = 0;
+    size_t count = 0;
+    const size_t i_start = start_from / 8;
+    const size_t i_max = ARENA_BITMAP_SIZE;
     /* Iterates over the bitmap bytes: each `i` represents a byte in the bitmap */
-    for (size_t i = 0; i < ARENA_BITMAP_SIZE; ++i)
+    for (size_t i = i_start; count < ARENA_BITMAP_SIZE; ++i)
     {
         uint8_t popcount = ARENA_POPCOUNT(bitmap[i], 8);
         if (popcount == 0)
@@ -422,7 +449,14 @@ size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
                 // Consider alignment
                 size_t prev_available = available;
                 bool break_and_continue = false;
-                while (((size_t) ((i + 1) * 8) - available) % align != 0)
+                bool positive_index = ((i + 1) * 8) >= available;
+                ARENA_ASSERT(positive_index);
+                if (!positive_index)
+                {
+                    ret_val = (size_t) (-1);
+                    goto ret_point;
+                }
+                while ((uintptr_t) &(data[(((i + 1) * 8) - available)]) % (uintptr_t) align != 0)
                 {
                     if (available == 0)
                     {
@@ -437,6 +471,13 @@ size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
                         available = prev_available;
                         break;
                     }
+                    positive_index = (((i + 1) * 8)) >= available;
+                    ARENA_ASSERT(positive_index);
+                    if (!positive_index)
+                    {
+                        ret_val = (size_t) (-1);
+                        goto ret_point;
+                    }
                 }
 
                 if (break_and_continue)
@@ -445,10 +486,10 @@ size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
                     continue;
                 }
 
-                bool aligned = (((size_t) ((i + 1) * 8) - available) % align == 0);
-                bool positive = (((size_t) ((i + 1) * 8) - available) >= 0);
-                ARENA_ASSERT(aligned && positive);
-                if (!aligned || !positive)
+                bool aligned = ((uintptr_t) &(data[(((i + 1) * 8) - available)]) % (uintptr_t) align == 0);
+                positive_index = (((i + 1) * 8) >= available);
+                ARENA_ASSERT(aligned && positive_index);
+                if (!aligned || !positive_index)
                 {
                     ret_val = (size_t) (-1);
                     goto ret_point;
@@ -484,7 +525,14 @@ size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
                     {
                         size_t prev_available = available;
                         bool break_and_continue = false;
-                        while (((size_t) (i * 8) + j + 1 - available) % align != 0)
+                        bool positive_index = ((i * 8) + j + 1) >= available;
+                        ARENA_ASSERT(positive_index);
+                        if (!positive_index)
+                        {
+                            ret_val = (size_t) (-1);
+                            goto ret_point;
+                        }
+                        while ((uintptr_t) &(data[((i * 8) + j + 1) - available]) % (uintptr_t) align != 0)
                         {
                             if (available == 0)
                             {
@@ -499,6 +547,13 @@ size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
                                 available = prev_available;
                                 break;
                             }
+                            positive_index = (((i * 8) + j + 1) >= available);
+                            ARENA_ASSERT(positive_index);
+                            if (!positive_index)
+                            {
+                                ret_val = (size_t) (-1);
+                                goto ret_point;
+                            }
                         }
 
                         if (break_and_continue)
@@ -507,10 +562,10 @@ size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
                             continue;
                         }
 
-                        bool aligned = (((size_t) (i * 8) + j + 1 - available) % align == 0);
-                        bool positive = (((size_t) (i * 8) + j + 1 - available) >= 0);
-                        ARENA_ASSERT(aligned && positive);
-                        if (!aligned || !positive)
+                        bool aligned = ((uintptr_t) &(data[((i * 8) + j + 1) - available]) % (uintptr_t) align == 0);
+                        positive_index = (((i * 8) + j + 1) >= available);
+                        ARENA_ASSERT(aligned && positive_index);
+                        if (!aligned || !positive_index)
                         {
                             ret_val = (size_t) (-1);
                             goto ret_point;
@@ -532,13 +587,20 @@ size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap)
                 }
             }
         }
+
+        if (i == i_max - 1)
+        {
+            i = (size_t) (-1); // Will wrap around to 0
+        }
+        ++count;
     }
 
 ret_point:
     if(needed_to_lock)
     {
-        ARENA_UNLOCK(arena_raw_mem_lock);
+        ARENA_UNLOCK(arena_static_mem_lock);
     }
+    start_from = ret_val;
     return ret_val;
 }
 

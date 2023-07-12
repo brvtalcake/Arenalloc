@@ -710,8 +710,16 @@ ARENA_BEGIN_DECLS
     #define ARENA_TID GetCurrentThreadId()
 #endif
 
-
-// TODO: Finish these macros
+#if defined(ARENA_FORCE_USE_ATOMIC)
+    #undef ARENA_HAS_ATOMIC
+    #undef ARENA_HAS_THREADS
+    #define ARENA_HAS_ATOMIC ARENA_ID(ARENA_FORCE_USE_ATOMIC)
+#elif defined(ARENA_FORCE_USE_THREADS)
+    #undef ARENA_HAS_ATOMIC
+    #undef ARENA_HAS_THREADS
+    #define ARENA_HAS_THREADS ARENA_ID(ARENA_FORCE_USE_THREADS)
+#endif
+// TODO: Finish these macros (DONE)
 #if ARENA_THREAD_SAFE == 1
     #if ARENA_HAS_ATOMIC != 0
         #if ARENA_HAS_ATOMIC == 1
@@ -925,6 +933,7 @@ ARENA_BEGIN_DECLS
         #define ARENA_LOCK_IS_MINE(lock) ((lock).tid == ARENA_TID)
     #elif ARENA_HAS_THREADS == 2
     // Use Windows API
+    // TODO: Verify potential failures of the functions used
         typedef struct ArenaLock
         {
             CRITICAL_SECTION main_lock;
@@ -932,26 +941,26 @@ ARENA_BEGIN_DECLS
             volatile ARENA_TID_TYPE tid;
         } arena_lock_t;
         #define ARENA_LOCK_TYPE arena_lock_t
-        #define ARENA_LOCK_INIT(lock)                       \
-        {                                                   \
-            InitializeCriticalSection(&((lock).main_lock)); \
-            (lock).state = ARENA_MK_LOCK_INT_TYPE(0);       \
-            (lock).tid = ARENA_TID;                         \
-        }
+        #define ARENA_LOCK_INIT(lock)                           \
+            {                                                   \
+                InitializeCriticalSection(&((lock).main_lock)); \
+                (lock).state = ARENA_MK_LOCK_INT_TYPE(0);       \
+                (lock).tid = ARENA_TID;                         \
+            }
         #define ARENA_LOCK_DESTROY(lock) DeleteCriticalSection(&((lock).main_lock))
-        #define ARENA_LOCK(lock)                                                \
-        {                                                                       \
-            InterlockedExchange16(&((lock).state), ARENA_MK_LOCK_INT_TYPE(1));  \
-            InterlockedExchange(&((lock).tid), ARENA_TID);                      \
-            EnterCriticalSection(&((lock).main_lock));                          \
-        }
-        #define ARENA_UNLOCK(lock)                                              \
-        {                                                                       \
-            LeaveCriticalSection(&((lock).main_lock));                          \
-            InterlockedExchange16(&((lock).state), ARENA_MK_LOCK_INT_TYPE(0));  \
-        }
-        #define ARENA_LOCK_IS_LOCKED(lock) (InterlockedCompareExchange16(&((lock).state), ARENA_MK_LOCK_INT_TYPE(0), ARENA_MK_LOCK_INT_TYPE(0)) != ARENA_MK_LOCK_INT_TYPE(0))
-        #define ARENA_LOCK_IS_MINE(lock) (InterlockedCompareExchange(&((lock).tid), ARENA_TID, ARENA_TID) == ARENA_TID)
+        #define ARENA_LOCK(lock)                                                    \
+            {                                                                       \
+                InterlockedExchange16(&((lock).state), ARENA_MK_LOCK_INT_TYPE(1));  \
+                InterlockedExchange(&((lock).tid), ARENA_TID);                      \
+                EnterCriticalSection(&((lock).main_lock));                          \
+            }
+        #define ARENA_UNLOCK(lock)                                                  \
+            {                                                                       \
+                LeaveCriticalSection(&((lock).main_lock));                          \
+                InterlockedExchange16(&((lock).state), ARENA_MK_LOCK_INT_TYPE(0));  \
+            }
+        #define ARENA_LOCK_IS_LOCKED(lock) (InterlockedOr16(&((lock).state), 0) != ARENA_MK_LOCK_INT_TYPE(0))
+        #define ARENA_LOCK_IS_MINE(lock) (InterlockedOr16(&((lock).tid), 0) == ARENA_TID)
     #elif ARENA_HAS_THREADS == 3
     // Use pthread
         typedef struct ArenaLock
@@ -976,36 +985,96 @@ ARENA_BEGIN_DECLS
                 fprintf(stderr, "pthread_mutexattr_settype failed\n");          \
                 exit(EXIT_FAILURE);                                             \
             }                                                                   \
-            pthread_mutex_init(&((lock).main_lock), NULL);                      \
-            pthread_mutex_init(&((lock).state_lock), &attr);                    \
-            pthread_mutex_init(&((lock).tid_lock), &attr);                      \
-            pthread_mutexattr_destroy(&attr);                                   \
+            if (pthread_mutex_init(&((lock).main_lock), NULL) != 0)             \
+            {                                                                   \
+                fprintf(stderr, "pthread_mutex_init failed\n");                 \
+                exit(EXIT_FAILURE);                                             \
+            }                                                                   \
+            if (pthread_mutex_init(&((lock).state_lock), &attr) != 0)           \
+            {                                                                   \
+                fprintf(stderr, "pthread_mutex_init failed\n");                 \
+                exit(EXIT_FAILURE);                                             \
+            }                                                                   \
+            if (pthread_mutex_init(&((lock).tid_lock), &attr) != 0)             \
+            {                                                                   \
+                fprintf(stderr, "pthread_mutex_init failed\n");                 \
+                exit(EXIT_FAILURE);                                             \
+            }                                                                   \
+            if (pthread_mutexattr_destroy(&attr) != 0)                          \
+            {                                                                   \
+                fprintf(stderr, "pthread_mutexattr_destroy failed\n");          \
+                exit(EXIT_FAILURE);                                             \
+            }                                                                   \
             (lock).state = ARENA_MK_LOCK_INT_TYPE(0);                           \
             (lock).tid = ARENA_TID;                                             \
         }
-        #define ARENA_LOCK_DESTROY(lock)                    \
-        {                                                   \
-            pthread_mutex_destroy(&((lock).main_lock));     \
-            pthread_mutex_destroy(&((lock).state_lock));    \
-            pthread_mutex_destroy(&((lock).tid_lock));      \
-        }
-        #define ARENA_LOCK(lock)                            \
-        {                                                   \
-            pthread_mutex_lock(&((lock).main_lock));        \
-            pthread_mutex_lock(&((lock).state_lock));       \
-            (lock).state = ARENA_MK_LOCK_INT_TYPE(1);       \
-            pthread_mutex_unlock(&((lock).state_lock));     \
-            pthread_mutex_lock(&((lock).tid_lock));         \
-            (lock).tid = ARENA_TID;                         \
-            pthread_mutex_unlock(&((lock).tid_lock));       \
-        }
-        #define ARENA_UNLOCK(lock)                          \
-        {                                                   \
-            pthread_mutex_lock(&((lock).state_lock));       \
-            (lock).state = ARENA_MK_LOCK_INT_TYPE(0);       \
-            pthread_mutex_unlock(&((lock).state_lock));     \
-            pthread_mutex_unlock(&(lock).main_lock);        \
-        }
+        #define ARENA_LOCK_DESTROY(lock)                                \
+            {                                                           \
+                if (pthread_mutex_destroy(&((lock).main_lock)) != 0)    \
+                {                                                       \
+                    fprintf(stderr, "pthread_mutex_destroy failed\n");  \
+                    exit(EXIT_FAILURE);                                 \
+                }                                                       \
+                if (pthread_mutex_destroy(&((lock).state_lock)) != 0)   \
+                {                                                       \
+                    fprintf(stderr, "pthread_mutex_destroy failed\n");  \
+                    exit(EXIT_FAILURE);                                 \
+                }                                                       \
+                if (pthread_mutex_destroy(&((lock).tid_lock)) != 0)     \
+                {                                                       \
+                    fprintf(stderr, "pthread_mutex_destroy failed\n");  \
+                    exit(EXIT_FAILURE);                                 \
+                }                                                       \
+            }
+        #define ARENA_LOCK(lock)                                        \
+            {                                                           \
+                if (pthread_mutex_lock(&((lock).main_lock)) != 0)       \
+                {                                                       \
+                    fprintf(stderr, "pthread_mutex_lock failed\n");     \
+                    exit(EXIT_FAILURE);                                 \
+                }                                                       \
+                if (pthread_mutex_lock(&((lock).state_lock)) != 0)      \
+                {                                                       \
+                    fprintf(stderr, "pthread_mutex_lock failed\n");     \
+                    exit(EXIT_FAILURE);                                 \
+                }                                                       \
+                (lock).state = ARENA_MK_LOCK_INT_TYPE(1);               \
+                if (pthread_mutex_unlock(&((lock).state_lock)) != 0)    \
+                {                                                       \
+                    fprintf(stderr, "pthread_mutex_unlock failed\n");   \
+                    exit(EXIT_FAILURE);                                 \
+                }                                                       \
+                if (pthread_mutex_lock(&((lock).tid_lock)) != 0)        \
+                {                                                       \
+                    fprintf(stderr, "pthread_mutex_lock failed\n");     \
+                    exit(EXIT_FAILURE);                                 \
+                }                                                       \
+                (lock).tid = ARENA_TID;                                 \
+                if (pthread_mutex_unlock(&((lock).tid_lock)) != 0)      \
+                {                                                       \
+                    fprintf(stderr, "pthread_mutex_unlock failed\n");   \
+                    exit(EXIT_FAILURE);                                 \
+                }                                                       \
+            }
+        #define ARENA_UNLOCK(lock)                                      \
+            {                                                           \
+                if (pthread_mutex_lock(&((lock).state_lock)) != 0)      \
+                {                                                       \
+                    fprintf(stderr, "pthread_mutex_lock failed\n");     \
+                    exit(EXIT_FAILURE);                                 \
+                }                                                       \
+                (lock).state = ARENA_MK_LOCK_INT_TYPE(0);               \
+                if (pthread_mutex_unlock(&((lock).state_lock)) != 0)    \
+                {                                                       \
+                    fprintf(stderr, "pthread_mutex_unlock failed\n");   \
+                    exit(EXIT_FAILURE);                                 \
+                }                                                       \
+                if (pthread_mutex_unlock(&((lock).main_lock)) != 0)     \
+                {                                                       \
+                    fprintf(stderr, "pthread_mutex_unlock failed\n");   \
+                    exit(EXIT_FAILURE);                                 \
+                }                                                       \
+            }
         #define ARENA_LOCK_IS_LOCKED(lock) ((lock).state != ARENA_MK_LOCK_INT_TYPE(0))
         #define ARENA_LOCK_IS_MINE(lock) ((lock).tid == ARENA_TID)
     #endif
@@ -1017,22 +1086,22 @@ ARENA_BEGIN_DECLS
         ARENA_TID_TYPE tid;
     } arena_lock_t;
     #define ARENA_LOCK_TYPE volatile arena_lock_t
-    #define ARENA_LOCK_INIT(lock) (lock) = { .main_lock = 0, .tid = ARENA_TID}
-    #define ARENA_LOCK_DESTROY(lock) (lock) = { .main_lock = 0, .tid = ARENA_TID}
-    #define ARENA_LOCK(lock)                    \
-        {                                       \
-            volatile sig_atomic_t expected = 0; \
-            volatile sig_atomic_t desired = 1;  \
-            while((lock).main_lock != expected) \
-            {                                   \
-                expected = 0;                   \
-                desired = 1;                    \
-            }                                   \
-            (lock).tid = ARENA_TID;             \
-            (lock).main_lock = 1;               \
+    #define ARENA_LOCK_INIT(lock) ((lock).main_lock = ARENA_MK_LOCK_INT_TYPE(0)); (lock).tid = ARENA_TID
+    #define ARENA_LOCK_DESTROY(lock) ((lock).main_lock = ARENA_MK_LOCK_INT_TYPE(0))
+    #define ARENA_LOCK(lock)                                                    \
+        {                                                                       \
+            volatile ARENA_LOCK_INT_TYPE expected = ARENA_MK_LOCK_INT_TYPE(0);  \
+            volatile ARENA_LOCK_INT_TYPE desired = ARENA_MK_LOCK_INT_TYPE(1);   \
+            while((lock).main_lock != ARENA_MK_LOCK_INT_TYPE(0))                \
+            {                                                                   \
+                expected = ARENA_MK_LOCK_INT_TYPE(0);                           \
+                desired = ARENA_MK_LOCK_INT_TYPE(1);                            \
+            }                                                                   \
+            (lock).main_lock = ARENA_MK_LOCK_INT_TYPE(1);                       \
+            (lock).tid = ARENA_TID;                                             \
         }
-    #define ARENA_UNLOCK(lock) (lock).main_lock = 0
-    #define ARENA_LOCK_IS_LOCKED(lock) ((lock).main_lock != 0)
+    #define ARENA_UNLOCK(lock) ((lock).main_lock = ARENA_MK_LOCK_INT_TYPE(0))
+    #define ARENA_LOCK_IS_LOCKED(lock) ((lock).main_lock != ARENA_MK_LOCK_INT_TYPE(0))
     #define ARENA_LOCK_IS_MINE(lock) ((lock).tid == ARENA_TID)
 #endif
 
@@ -1155,14 +1224,23 @@ ARENA_STATIC_ASSERT(ARENA_DEFAULT_ALIGN >= 1, "ARENA_DEFAULT_ALIGN must be great
 #elif !defined(ARENA_STATIC_MEM_BASE_ALIGN) && defined(ARENA_STATIC_MEM_MAX_ALIGN_REQUEST)
     #define ARENA_STATIC_MEM_BASE_ALIGN ARENA_STATIC_MEM_MAX_ALIGN_REQUEST
 #elif !defined(ARENA_STATIC_MEM_BASE_ALIGN) && !defined(ARENA_STATIC_MEM_MAX_ALIGN_REQUEST)
-    #define ARENA_STATIC_MEM_BASE_ALIGN 512
+    #define ARENA_STATIC_MEM_BASE_ALIGN (512*2*2*2)
     #define ARENA_STATIC_MEM_MAX_ALIGN_REQUEST ARENA_STATIC_MEM_BASE_ALIGN
 #else
     ARENA_STATIC_ASSERT(ARENA_STATIC_MEM_BASE_ALIGN >= ARENA_STATIC_MEM_MAX_ALIGN_REQUEST, "ARENA_STATIC_MEM_BASE_ALIGN must be greater than or equal to ARENA_STATIC_MEM_MAX_ALIGN_REQUEST");
 #endif
 
 typedef uint8_t bit_map_t[ARENA_BITMAP_SIZE];
+
+typedef enum MemoryKind
+{
+    ARENA_STATIC_MEM,
+    ARENA_DYN_ARENA_MEM
+} mem_kind_t;
+
 /*
+ * This is the basic structure used to store information about the allocated memory.
+ * arenalloc uses both statically allocated raw_mem_t and dynamically allocated raw_mem_t.
  * TODO: Change `state` to store information about size of the allocated chunk to which belong
  * the bytes, so it's possible to free them.
  * TODO: Also, include a lock in the struct to make it thread-safe.
@@ -1172,8 +1250,10 @@ typedef struct RawMemory
     ARENA_ALIGNAS(ARENA_STATIC_MEM_BASE_ALIGN)
     char data[ARENA_STATIC_CAP / 10];
     bit_map_t state;
+    char* original_pointer;
     size_t* region_sizes;
     size_t region_count;
+    mem_kind_t kind;
 } raw_mem_t;
 
 typedef struct Arena
@@ -1182,26 +1262,27 @@ typedef struct Arena
     char* avail;
     char* limit;
     ARENA_LOCK_TYPE lock;
+    mem_kind_t kind;
 } arena_t;
 
 #if defined(ARENA_DEBUG)
     #include <stdio.h>
     #include <stdbool.h>
 bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value);
-size_t bitmap_first_fit(size_t size, size_t align, bit_map_t bitmap);
+size_t bitmap_first_fit(size_t size, size_t align, const char* const data, bit_map_t bitmap);
 void bitmap_print(FILE* stream, size_t start, size_t size, bit_map_t bitmap);
 ARENA_ALLOCATOR((), (1), 2)
-void* arena_raw_mem_alloc_aligned(size_t size, size_t align);
-void* arena_raw_mem_alloc_default(size_t size);
-#if defined(arena_raw_mem_alloc)
-    #undef arena_raw_mem_alloc
+void* arena_static_mem_alloc_aligned(size_t size, size_t align);
+void* arena_static_mem_alloc_default(size_t size);
+#if defined(arena_static_mem_alloc)
+    #undef arena_static_mem_alloc
 #endif
-#define arena_raw_mem_alloc(...)                                                                    \
+#define arena_static_mem_alloc(...)                                                                    \
     ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 0))                                           \
-    (ARENA_STATIC_ASSERT(false, "arena_raw_mem_alloc() must be called with at least one argument"), NULL) \
+    (ARENA_STATIC_ASSERT(false, "arena_static_mem_alloc() must be called with at least one argument"), NULL) \
     (ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 1))                                          \
-        (arena_raw_mem_alloc_default(__VA_ARGS__))                                                  \
-        (arena_raw_mem_alloc_aligned(__VA_ARGS__)))
+        (arena_static_mem_alloc_default(__VA_ARGS__))                                                  \
+        (arena_static_mem_alloc_aligned(__VA_ARGS__)))
 #endif
 
 #if defined(ARENA_ON_UNIX) || defined(ARENA_ON_MACOS) || defined(ARENA_ON_ANDROID)
