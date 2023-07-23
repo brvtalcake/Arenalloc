@@ -746,7 +746,7 @@ ARENA_BEGIN_DECLS
                         expected = ARENA_MK_LOCK_INT_TYPE(0);                               \
                         desired = ARENA_MK_LOCK_INT_TYPE(1);                                \
                     }                                                                       \
-                    atomic_store_explicit(&((lock).tid), ARENA_TID, memory_order_acquire);  \
+                    atomic_store_explicit(&((lock).tid), ARENA_TID, memory_order_seq_cst);  \
                 }
             #define ARENA_UNLOCK(lock)          \
                 atomic_store_explicit(          \
@@ -1145,7 +1145,7 @@ ARENA_BEGIN_DECLS
             (ARENA_STATIC_ASSERT(0, "ARENA_FUNC_ALLOC_SIZE takes 1 or 2 arguments"))    \
         )
     #define ARENA_FUNC_ALLOC_ALIGN(align) __attribute__((__alloc_align__(align)))
-    #define ARENA_ALLOCATOR(...) ARENA_ALLOCATOR_REDIRECT(__VA_ARGS__)
+    #define ARENA_ALLOCATOR(...) ARENA_ALLOCATOR_REDIRECT(__VA_ARGS__) ARENA_FUNC_WUR
     #define ARENA_ALLOCATOR_REDIRECT(...)                                                       \
         ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 0))                                   \
         (ARENA_FUNC_MALLOC())                                                                   \
@@ -1179,7 +1179,7 @@ ARENA_BEGIN_DECLS
     #define ARENA_FUNC_ALLOC_SIZE(...) ARENA_FUNC_ALLOC_SIZE_REDIRECT(__VA_ARGS__)
     #define ARENA_FUNC_ALLOC_SIZE_REDIRECT(...) ARENA_EAT(__VA_ARGS__)
     #define ARENA_FUNC_ALLOC_ALIGN(align) ARENA_EAT(align)
-    #define ARENA_ALLOCATOR(...) ARENA_ALLOCATOR_REDIRECT(__VA_ARGS__)
+    #define ARENA_ALLOCATOR(...) ARENA_ALLOCATOR_REDIRECT(__VA_ARGS__) ARENA_FUNC_WUR
     #define ARENA_ALLOCATOR_REDIRECT(...) ARENA_EAT(__VA_ARGS__)
     #define ARENA_FUNC_PURE
     #define ARENA_FUNC_CONST
@@ -1212,6 +1212,7 @@ ARENA_BEGIN_DECLS
 ARENA_STATIC_ASSERT((ARENA_STATIC_CAP >= 0) && (ARENA_STATIC_CAP % 10 == 0) && ((ARENA_STATIC_CAP / 10) % 8 == 0), "ARENA_STATIC_CAP must be a positive and divisible by 10 and (ARENA_STATIC_CAP / 10) must be divisible by 8 (ARENA_STATIC_CAP must be divisible by 80)");
 
 #if !defined(ARENA_DEFAULT_ALIGN)
+    /* This is the default alignment of a pointer returned by arena_alloc */
     #define ARENA_DEFAULT_ALIGN ARENA_ALIGNOF(max_align_t)
 #endif
 
@@ -1230,39 +1231,49 @@ ARENA_STATIC_ASSERT(ARENA_DEFAULT_ALIGN >= 1, "ARENA_DEFAULT_ALIGN must be great
     ARENA_STATIC_ASSERT(ARENA_STATIC_MEM_BASE_ALIGN >= ARENA_STATIC_MEM_MAX_ALIGN_REQUEST, "ARENA_STATIC_MEM_BASE_ALIGN must be greater than or equal to ARENA_STATIC_MEM_MAX_ALIGN_REQUEST");
 #endif
 
+/* The type used to store whether a byte is free or not */
 typedef uint8_t bit_map_t[ARENA_BITMAP_SIZE];
 
 typedef enum MemoryKind
 {
     ARENA_STATIC_MEM,
-    ARENA_DYN_ARENA_MEM
+    ARENA_DYN_MEM,
+    ARENA_INTERNAL_MEM
 } mem_kind_t;
+
+/*
+ * mem_header_t is the header embedded before the user data.
+ */
+typedef struct MemHeader
+{
+    size_t requested_size;
+    size_t requested_align;
+} mem_header_t;
 
 /*
  * This is the basic structure used to store information about the allocated memory.
  * arenalloc uses both statically allocated raw_mem_t and dynamically allocated raw_mem_t.
- * TODO: Change `state` to store information about size of the allocated chunk to which belong
- * the bytes, so it's possible to free them.
- * TODO: Also, include a lock in the struct to make it thread-safe.
  */
 typedef struct RawMemory
 {
     ARENA_ALIGNAS(ARENA_STATIC_MEM_BASE_ALIGN)
-    char data[ARENA_STATIC_CAP / 10];
+    char* data;
     bit_map_t state;
+
+    /*
+     * `original_pointer` is the pointer returned by morecore, before an eventual reallingment.
+     */
     char* original_pointer;
-    size_t* region_sizes;
-    size_t region_count;
     mem_kind_t kind;
 } raw_mem_t;
 
 typedef struct Arena
 {
-    struct Arena* next;
-    char* avail;
-    char* limit;
     ARENA_LOCK_TYPE lock;
-    mem_kind_t kind;
+    struct Arena* next;
+    struct Arena* prev;
+    raw_mem_t* raw_mem;
+    size_t size;
 } arena_t;
 
 #if defined(ARENA_DEBUG)
@@ -1271,25 +1282,28 @@ typedef struct Arena
 bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value);
 size_t bitmap_first_fit(size_t size, size_t align, const char* const data, bit_map_t bitmap);
 void bitmap_print(FILE* stream, size_t start, size_t size, bit_map_t bitmap);
+#if 0
 ARENA_ALLOCATOR((), (1), 2)
 void* arena_static_mem_alloc_aligned(size_t size, size_t align);
 void* arena_static_mem_alloc_default(size_t size);
 #if defined(arena_static_mem_alloc)
     #undef arena_static_mem_alloc
 #endif
-#define arena_static_mem_alloc(...)                                                                    \
-    ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 0))                                           \
-    (ARENA_STATIC_ASSERT(false, "arena_static_mem_alloc() must be called with at least one argument"), NULL) \
-    (ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 1))                                          \
-        (arena_static_mem_alloc_default(__VA_ARGS__))                                                  \
+#define arena_static_mem_alloc(...)                                                                             \
+    ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 0))                                                       \
+    (ARENA_STATIC_ASSERT(false, "arena_static_mem_alloc() must be called with at least one argument"), NULL)    \
+    (ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 1))                                                      \
+        (arena_static_mem_alloc_default(__VA_ARGS__))                                                           \
         (arena_static_mem_alloc_aligned(__VA_ARGS__)))
+
+#endif
 #endif
 
 #if defined(ARENA_ON_UNIX) || defined(ARENA_ON_MACOS) || defined(ARENA_ON_ANDROID)
 void arena_set_mmap_threshold(size_t size);
 #endif
-void arenalloc_init();
-void arenalloc_deinit();
+void arenalloc_init(void);
+void arenalloc_deinit(void);
 
 ARENA_END_DECLS
 
