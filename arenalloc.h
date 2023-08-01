@@ -31,247 +31,105 @@ SOFTWARE.
 
 #include <stddef.h>
 
-#if defined(ARENA_NAMESPACE)
-    #undef ARENA_NAMESPACE
-#endif
-#if defined(ARENA_CAT)
-    #undef ARENA_CAT
-#endif
-#if defined(ARENA_CAT_REDIRECT)
-    #undef ARENA_CAT_REDIRECT
-#endif
-#if defined(ARENA_C)
-    #undef ARENA_C
-#endif
-#if defined(ARENA_CXX)
-    #undef ARENA_CXX
-#endif
-#if defined(ARENA_HAS_FEATURE)
-    #undef ARENA_HAS_FEATURE
-#endif
-#if defined(ARENA_HAS_EXTENSION)
-    #undef ARENA_HAS_EXTENSION
-#endif
-#if defined(ARENA_HAS_INCLUDE)
-    #undef ARENA_HAS_INCLUDE
-#endif
-#if defined(ARENA_WITH_GCC)
-    #undef ARENA_WITH_GCC
-#endif
-#if defined(ARENA_WITH_CLANG)
-    #undef ARENA_WITH_CLANG
-#endif
-#if defined(ARENA_WITH_MSVC)
-    #undef ARENA_WITH_MSVC
-#endif
-#if defined(ARENA_ON_WINDOWS)
-    #undef ARENA_ON_WINDOWS
-#endif
-#if defined(ARENA_ON_UNIX)
-    #undef ARENA_ON_UNIX
-#endif
-#if defined(ARENA_ON_MACOS)
-    #undef ARENA_ON_MACOS
-#endif
-#if defined(ARENA_ON_ANDROID)
-    #undef ARENA_ON_ANDROID
-#endif
-#if defined(ARENA_HAS_THREADS)
-    #undef ARENA_HAS_THREADS
-#endif
-#if defined(ARENA_HAS_ATOMIC)
-    #undef ARENA_HAS_ATOMIC
-#endif
-#if defined(ARENA_ATOMIC_SPECIFIED_TYPE)
-    #undef ARENA_ATOMIC_SPECIFIED_TYPE
-#endif
-#if defined(ARENA_ATOMIC_QUALIFIED_TYPE)
-    #undef ARENA_ATOMIC_QUALIFIED_TYPE
-#endif
-#if defined(ARENA_LOCK_TYPE)
-    #undef ARENA_LOCK_TYPE
-#endif
-#if defined(ARENA_LOCK_INIT)
-    #undef ARENA_LOCK_INIT
-#endif
-#if defined(ARENA_LOCK_DESTROY)
-    #undef ARENA_LOCK_DESTROY
-#endif
-#if defined(ARENA_LOCK)
-    #undef ARENA_LOCK
-#endif
-#if defined(ARENA_UNLOCK)
-    #undef ARENA_UNLOCK
-#endif
-#if defined(ARENA_THREAD_SAFE)
-    #undef ARENA_THREAD_SAFE
-#endif
-#if defined(ARENA_LOCK_INT_TYPE)
-    #undef ARENA_LOCK_INT_TYPE
-#endif
-#if defined(ARENA_MK_LOCK_INT_TYPE)
-    #undef ARENA_MK_LOCK_INT_TYPE
-#endif
-#if defined(ARENA_MORECORE)
-    #undef ARENA_MORECORE
-#endif
-#if defined(ARENA_BEGIN_DECLS)
-    #undef ARENA_BEGIN_DECLS
-#endif
-#if defined(ARENA_END_DECLS)
-    #undef ARENA_END_DECLS
-#endif
-#if defined(ARENA_ALIGNAS)
-    #undef ARENA_ALIGNAS
-#endif
-#if defined(ARENA_ALIGNOF)
-    #undef ARENA_ALIGNOF
-#endif
-#if defined(ARENA_BITMAP_SIZE)
-    #undef ARENA_BITMAP_SIZE
-#endif
-#if defined(ARENA_ID)
-    #undef ARENA_ID
-#endif
-#if defined(ARENA_ID_REDIRECT_0) || defined(ARENA_ID_REDIRECT_1) || defined(ARENA_ID_REDIRECT_2) \
- || defined(ARENA_ID_REDIRECT_3) || defined(ARENA_ID_REDIRECT_4) || defined(ARENA_ID_REDIRECT_5) \
- || defined(ARENA_ID_REDIRECT_6)
-    #undef ARENA_ID_REDIRECT_0
-    #undef ARENA_ID_REDIRECT_1
-    #undef ARENA_ID_REDIRECT_2
-    #undef ARENA_ID_REDIRECT_3
-    #undef ARENA_ID_REDIRECT_4
-    #undef ARENA_ID_REDIRECT_5
-    #undef ARENA_ID_REDIRECT_6
-#endif
-#if defined(ARENA_ARGC)
-    #undef ARENA_ARGC
-#endif
-#if defined(ARENA_ARGC_REDIRECT_0) || defined(ARENA_ARGC_REDIRECT_1) || defined(ARENA_ARGC_REDIRECT)
-    #undef ARENA_ARGC_REDIRECT_0
-    #undef ARENA_ARGC_REDIRECT_1
-    #undef ARENA_ARGC_REDIRECT
-#endif
-#if defined(ARENA_ARGS_AUGMENTER)
-    #undef ARENA_ARGS_AUGMENTER
-#endif
-#if defined(ARENA_EXPAND_ARGS)
-    #undef ARENA_EXPAND_ARGS
-#endif
-#if defined(ARENA_EXPAND)
-    #undef ARENA_EXPAND
-#endif
-#if defined(ARENA_NAT_EQ)
-    #undef ARENA_NAT_EQ
-#endif
-#if defined(ARENA_NAT_EQ_0_0) || defined(ARENA_NAT_EQ_0_1) || defined(ARENA_NAT_EQ_1_0) \
- || defined(ARENA_NAT_EQ_0_2) || defined(ARENA_NAT_EQ_2_0) || defined(ARENA_NAT_EQ_1_1) \
- || defined(ARENA_NAT_EQ_1_2) || defined(ARENA_NAT_EQ_2_1) || defined(ARENA_NAT_EQ_2_2) \
- || defined(ARENA_NAT_EQ_0_3) || defined(ARENA_NAT_EQ_3_0) || defined(ARENA_NAT_EQ_1_3) \
- || defined(ARENA_NAT_EQ_3_1) || defined(ARENA_NAT_EQ_2_3) || defined(ARENA_NAT_EQ_3_2) \
- || defined(ARENA_NAT_EQ_3_3)
-    #undef ARENA_NAT_EQ_0_0
-    #undef ARENA_NAT_EQ_0_1
-    #undef ARENA_NAT_EQ_1_0
-    #undef ARENA_NAT_EQ_0_2
-    #undef ARENA_NAT_EQ_2_0
-    #undef ARENA_NAT_EQ_1_1
-    #undef ARENA_NAT_EQ_1_2
-    #undef ARENA_NAT_EQ_2_1
-    #undef ARENA_NAT_EQ_2_2
-    #undef ARENA_NAT_EQ_0_3
-    #undef ARENA_NAT_EQ_3_0
-    #undef ARENA_NAT_EQ_1_3
-    #undef ARENA_NAT_EQ_3_1
-    #undef ARENA_NAT_EQ_2_3
-    #undef ARENA_NAT_EQ_3_2
-    #undef ARENA_NAT_EQ_3_3
-#endif
-#if defined(ARENA_PP_IF) || defined(ARENA_PP_IF_0) || defined(ARENA_PP_IF_1)
-    #undef ARENA_PP_IF
-    #undef ARENA_PP_IF_0
-    #undef ARENA_PP_IF_1
-#endif
-#if defined(ARENA_EAT)
-    #undef ARENA_EAT
-#endif
-#if defined(ARENA_MACRO_HAS_NO_ARG)
-    #undef ARENA_MACRO_HAS_NO_ARG
-#endif
-#if defined(ARENA_PP_NOT)
-    #undef ARENA_PP_NOT
-#endif
-#if defined(ARENA_PP_AND)
-    #undef ARENA_PP_AND
-#endif
-#if defined(ARENA_PP_OR)
-    #undef ARENA_PP_OR
-#endif
-#if defined(ARENA_PP_XOR)
-    #undef ARENA_PP_XOR
-#endif
-#if defined(ARENA_PP_NAND)
-    #undef ARENA_PP_NAND
-#endif
-#if defined(ARENA_PP_NOR)
-    #undef ARENA_PP_NOR
-#endif
-#if defined(ARENA_PP_XNOR)
-    #undef ARENA_PP_XNOR
-#endif
-#if defined(ARENA_GET_ARG_N)
-    #undef ARENA_GET_ARG_N
-#endif
-#if defined(ARENA_GET_ARG_0) || defined(ARENA_GET_ARG_1) || defined(ARENA_GET_ARG_2) || defined(ARENA_GET_ARG_3) \
- || defined(ARENA_GET_ARG_4)
-    #undef ARENA_GET_ARG_0
-    #undef ARENA_GET_ARG_1
-    #undef ARENA_GET_ARG_2
-    #undef ARENA_GET_ARG_3
-    #undef ARENA_GET_ARG_4
-#endif
-#if defined(ARENA_PP_INVOKE)
-    #undef ARENA_PP_INVOKE
-#endif
-#if defined(ARENA_PP_INVOKE_REDIRECT)
-    #undef ARENA_PP_INVOKE_REDIRECT
-#endif
-#if defined(ARENA_FUNC_ARTIFICIAL)
-    #undef ARENA_FUNC_ARTIFICIAL
-#endif
-#if defined(ARENA_FUNC_WUR)
-    #undef ARENA_FUNC_WUR
-#endif
-#if defined(ARENA_FUNC_NONNULL)
-    #undef ARENA_FUNC_NONNULL
-#endif
-#if defined(ARENA_FUNC_MALLOC)
-    #undef ARENA_FUNC_MALLOC
-#endif
-#if defined(ARENA_FUNC_MALLOC_REDIRECT)
-    #undef ARENA_FUNC_MALLOC_REDIRECT
-#endif
-#if defined(ARENA_FUNC_ALLOC_SIZE)
-    #undef ARENA_FUNC_ALLOC_SIZE
-#endif
-#if defined(ARENA_FUNC_ALLOC_SIZE_REDIRECT)
-    #undef ARENA_FUNC_ALLOC_SIZE_REDIRECT
-#endif
-#if defined(ARENA_FUNC_ALLOC_ALIGN)
-    #undef ARENA_FUNC_ALLOC_ALIGN
-#endif
-#if defined(ARENA_ALLOCATOR)
-    #undef ARENA_ALLOCATOR
-#endif
-#if defined(ARENA_ALLOCATOR_REDIRECT)
-    #undef ARENA_ALLOCATOR_REDIRECT
-#endif
-#if defined(ARENA_FUNC_PURE)
-    #undef ARENA_FUNC_PURE
-#endif
-#if defined(ARENA_FUNC_CONST)
-    #undef ARENA_FUNC_CONST
-#endif
+#undef ARENA_NAMESPACE
+#undef ARENA_CAT
+#undef ARENA_CAT_REDIRECT
+#undef ARENA_C
+#undef ARENA_CXX
+#undef ARENA_HAS_FEATURE
+#undef ARENA_HAS_EXTENSION
+#undef ARENA_HAS_INCLUDE
+#undef ARENA_WITH_GCC
+#undef ARENA_WITH_CLANG
+#undef ARENA_WITH_MSVC
+#undef ARENA_ON_WINDOWS
+#undef ARENA_ON_UNIX
+#undef ARENA_ON_MACOS
+#undef ARENA_ON_ANDROID
+#undef ARENA_HAS_THREADS
+#undef ARENA_HAS_ATOMIC
+#undef ARENA_ATOMIC_SPECIFIED_TYPE
+#undef ARENA_ATOMIC_QUALIFIED_TYPE
+#undef ARENA_LOCK_TYPE
+#undef ARENA_LOCK_INIT
+#undef ARENA_LOCK_DESTROY
+#undef ARENA_LOCK
+#undef ARENA_UNLOCK
+#undef ARENA_THREAD_SAFE
+#undef ARENA_LOCK_INT_TYPE
+#undef ARENA_MK_LOCK_INT_TYPE
+#undef ARENA_MORECORE
+#undef ARENA_BEGIN_DECLS
+#undef ARENA_END_DECLS
+#undef ARENA_ALIGNAS
+#undef ARENA_ALIGNOF
+#undef ARENA_BITMAP_SIZE
+#undef ARENA_ID
+#undef ARENA_ID_REDIRECT_0
+#undef ARENA_ID_REDIRECT_1
+#undef ARENA_ID_REDIRECT_2
+#undef ARENA_ID_REDIRECT_3
+#undef ARENA_ID_REDIRECT_4
+#undef ARENA_ID_REDIRECT_5
+#undef ARENA_ID_REDIRECT_6
+#undef ARENA_ARGC
+#undef ARENA_ARGC_REDIRECT_0
+#undef ARENA_ARGC_REDIRECT_1
+#undef ARENA_ARGC_REDIRECT
+#undef ARENA_ARGS_AUGMENTER
+#undef ARENA_EXPAND_ARGS
+#undef ARENA_EXPAND
+#undef ARENA_NAT_EQ
+#undef ARENA_NAT_EQ_0_0
+#undef ARENA_NAT_EQ_0_1
+#undef ARENA_NAT_EQ_1_0
+#undef ARENA_NAT_EQ_0_2
+#undef ARENA_NAT_EQ_2_0
+#undef ARENA_NAT_EQ_1_1
+#undef ARENA_NAT_EQ_1_2
+#undef ARENA_NAT_EQ_2_1
+#undef ARENA_NAT_EQ_2_2
+#undef ARENA_NAT_EQ_0_3
+#undef ARENA_NAT_EQ_3_0
+#undef ARENA_NAT_EQ_1_3
+#undef ARENA_NAT_EQ_3_1
+#undef ARENA_NAT_EQ_2_3
+#undef ARENA_NAT_EQ_3_2
+#undef ARENA_NAT_EQ_3_3
+#undef ARENA_PP_IF
+#undef ARENA_PP_IF_0
+#undef ARENA_PP_IF_1
+#undef ARENA_EAT
+#undef ARENA_MACRO_HAS_NO_ARG
+#undef ARENA_PP_NOT
+#undef ARENA_PP_AND
+#undef ARENA_PP_OR
+#undef ARENA_PP_XOR
+#undef ARENA_PP_NAND
+#undef ARENA_PP_NOR
+#undef ARENA_PP_XNOR
+#undef ARENA_GET_ARG_N
+#undef ARENA_GET_ARG_0
+#undef ARENA_GET_ARG_1
+#undef ARENA_GET_ARG_2
+#undef ARENA_GET_ARG_3
+#undef ARENA_GET_ARG_4
+#undef ARENA_PP_INVOKE
+#undef ARENA_PP_INVOKE_REDIRECT
+#undef ARENA_FUNC_ARTIFICIAL
+#undef ARENA_FUNC_WUR
+#undef ARENA_FUNC_NONNULL
+#undef ARENA_FUNC_MALLOC
+#undef ARENA_FUNC_MALLOC_REDIRECT
+#undef ARENA_FUNC_ALLOC_SIZE
+#undef ARENA_FUNC_ALLOC_SIZE_REDIRECT
+#undef ARENA_FUNC_ALLOC_ALIGN
+#undef ARENA_ALLOCATOR
+#undef ARENA_ALLOCATOR_REDIRECT
+#undef ARENA_FUNC_PURE
+#undef ARENA_FUNC_CONST
+#undef ARENA_FUNC_CONSTRUCTOR
+#undef ARENA_FUNC_DESTRUCTOR
 
 #define ARENA_CAT_REDIRECT(x, y) x##y
 #define ARENA_CAT(x, y) ARENA_CAT_REDIRECT(x, y)
@@ -1171,6 +1029,8 @@ ARENA_BEGIN_DECLS
         )
         #define ARENA_FUNC_PURE __attribute__((__pure__))
         #define ARENA_FUNC_CONST __attribute__((__const__))
+        #define ARENA_FUNC_CONSTRUCTOR __attribute__((__constructor__))
+        #define ARENA_FUNC_DESTRUCTOR __attribute__((__destructor__))
 #else
     #define ARENA_FUNC_ARTIFICIAL
     #define ARENA_FUNC_WUR
@@ -1183,10 +1043,8 @@ ARENA_BEGIN_DECLS
     #define ARENA_ALLOCATOR_REDIRECT(...) ARENA_EAT(__VA_ARGS__)
     #define ARENA_FUNC_PURE
     #define ARENA_FUNC_CONST
-#endif
-
-#if !defined(ARENA_STATIC_CAP)
-    #define ARENA_STATIC_CAP (1024 * 1024 * 10)
+    #define ARENA_FUNC_CONSTRUCTOR
+    #define ARENA_FUNC_DESTRUCTOR
 #endif
 
 #include <assert.h>
@@ -1209,8 +1067,6 @@ ARENA_BEGIN_DECLS
     #endif
 #endif
 
-ARENA_STATIC_ASSERT((ARENA_STATIC_CAP >= 0) && (ARENA_STATIC_CAP % 10 == 0) && ((ARENA_STATIC_CAP / 10) % 8 == 0), "ARENA_STATIC_CAP must be a positive and divisible by 10 and (ARENA_STATIC_CAP / 10) must be divisible by 8 (ARENA_STATIC_CAP must be divisible by 80)");
-
 #if !defined(ARENA_DEFAULT_ALIGN)
     /* This is the default alignment of a pointer returned by arena_alloc */
     #define ARENA_DEFAULT_ALIGN ARENA_ALIGNOF(max_align_t)
@@ -1218,85 +1074,83 @@ ARENA_STATIC_ASSERT((ARENA_STATIC_CAP >= 0) && (ARENA_STATIC_CAP % 10 == 0) && (
 
 ARENA_STATIC_ASSERT(ARENA_DEFAULT_ALIGN >= 1, "ARENA_DEFAULT_ALIGN must be greater than or equal to 1");
 
-#define ARENA_BITMAP_SIZE (ARENA_STATIC_CAP / 80)
-
-#if defined(ARENA_STATIC_MEM_BASE_ALIGN) && !defined(ARENA_STATIC_MEM_MAX_ALIGN_REQUEST)
-    #define ARENA_STATIC_MEM_MAX_ALIGN_REQUEST ARENA_STATIC_MEM_BASE_ALIGN
-#elif !defined(ARENA_STATIC_MEM_BASE_ALIGN) && defined(ARENA_STATIC_MEM_MAX_ALIGN_REQUEST)
-    #define ARENA_STATIC_MEM_BASE_ALIGN ARENA_STATIC_MEM_MAX_ALIGN_REQUEST
-#elif !defined(ARENA_STATIC_MEM_BASE_ALIGN) && !defined(ARENA_STATIC_MEM_MAX_ALIGN_REQUEST)
-    #define ARENA_STATIC_MEM_BASE_ALIGN (512*2*2*2)
-    #define ARENA_STATIC_MEM_MAX_ALIGN_REQUEST ARENA_STATIC_MEM_BASE_ALIGN
-#else
-    ARENA_STATIC_ASSERT(ARENA_STATIC_MEM_BASE_ALIGN >= ARENA_STATIC_MEM_MAX_ALIGN_REQUEST, "ARENA_STATIC_MEM_BASE_ALIGN must be greater than or equal to ARENA_STATIC_MEM_MAX_ALIGN_REQUEST");
-#endif
-
-/* The type used to store whether a byte is free or not */
-typedef uint8_t bit_map_t[ARENA_BITMAP_SIZE];
-
 typedef enum MemoryKind
 {
-    ARENA_STATIC_MEM,
-    ARENA_DYN_MEM,
-    ARENA_INTERNAL_MEM
+    ARENA_STATIC_MEM = 1 << 0,
+    ARENA_DYN_MEM = 1 << 1,
+    
+    ARENA_MEM_KIND_COUNT = 2
 } mem_kind_t;
+
+#include <stddef.h>
+#include <stdbool.h>
 
 /*
  * mem_header_t is the header embedded before the user data.
  */
 typedef struct MemHeader
 {
-    size_t requested_size;
+    struct MemHeader* next;
+    char* start;
+    char* end;
     size_t requested_align;
+    bool in_use;
 } mem_header_t;
-
-/*
- * This is the basic structure used to store information about the allocated memory.
- * arenalloc uses both statically allocated raw_mem_t and dynamically allocated raw_mem_t.
- */
-typedef struct RawMemory
-{
-    ARENA_ALIGNAS(ARENA_STATIC_MEM_BASE_ALIGN)
-    char* data;
-    bit_map_t state;
-
-    /*
-     * `original_pointer` is the pointer returned by morecore, before an eventual reallingment.
-     */
-    char* original_pointer;
-    mem_kind_t kind;
-} raw_mem_t;
 
 typedef struct Arena
 {
     ARENA_LOCK_TYPE lock;
     struct Arena* next;
     struct Arena* prev;
-    raw_mem_t* raw_mem;
+    mem_header_t* first;
     size_t size;
 } arena_t;
 
 #if defined(ARENA_DEBUG)
-    #include <stdio.h>
-    #include <stdbool.h>
-bool bitmap_set(size_t start, size_t size, bit_map_t bitmap, bool value);
-size_t bitmap_first_fit(size_t size, size_t align, const char* const data, bit_map_t bitmap);
-void bitmap_print(FILE* stream, size_t start, size_t size, bit_map_t bitmap);
-#if 0
-ARENA_ALLOCATOR((), (1), 2)
-void* arena_static_mem_alloc_aligned(size_t size, size_t align);
-void* arena_static_mem_alloc_default(size_t size);
-#if defined(arena_static_mem_alloc)
-    #undef arena_static_mem_alloc
-#endif
-#define arena_static_mem_alloc(...)                                                                             \
-    ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 0))                                                       \
-    (ARENA_STATIC_ASSERT(false, "arena_static_mem_alloc() must be called with at least one argument"), NULL)    \
-    (ARENA_PP_IF(ARENA_NAT_EQ(ARENA_ARGC(__VA_ARGS__), 1))                                                      \
-        (arena_static_mem_alloc_default(__VA_ARGS__))                                                           \
-        (arena_static_mem_alloc_aligned(__VA_ARGS__)))
 
-#endif
+inline void
+arena_remove_from_list(arena_t* arena, arena_t** list)
+{
+    if (!arena || !list)
+        return;
+    
+    if (arena->next == arena || (arena->prev == arena && arena->next == arena))
+    {
+        *list = NULL;
+        arena->next = NULL;
+        arena->prev = NULL;
+        return;
+    }
+
+    arena->prev->next = arena->next;
+    arena->next->prev = arena->prev;
+    if (*list == arena)
+        *list = arena->next;
+    arena->next = NULL;
+    arena->prev = NULL;
+}
+
+inline void
+arena_add_to_list(arena_t* arena, arena_t** list)
+{
+    if (!arena || !list)
+        return;
+
+    if (!*list)
+    {
+        *list = arena;
+        arena->next = arena;
+        arena->prev = arena;
+        return;
+    }
+
+    arena->next = *list;
+    arena->prev = (*list)->prev;
+    (*list)->prev->next = arena;
+    (*list)->prev = arena;
+    *list = arena;
+}
+
 #endif
 
 #if defined(ARENA_ON_UNIX) || defined(ARENA_ON_MACOS) || defined(ARENA_ON_ANDROID)
